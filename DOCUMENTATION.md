@@ -109,7 +109,7 @@ All primary keys are UUID (`gen_random_uuid()`). The schema is idempotent — sa
 
 ## 4. API Reference
 
-Base URL: `https://<your-render-app>.onrender.com/api`
+Base URL: `https://shurma-api.onrender.com/api`
 
 All endpoints except `/auth/register` and `/auth/login` require:
 ```
@@ -255,7 +255,7 @@ PORT=5000
 DATABASE_URL=postgresql://postgres.[ref]:[password]@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres
 JWT_SECRET=<32+ char random hex>
 JWT_EXPIRES_IN=7d
-CLIENT_URL=https://<your-vercel-app>.vercel.app
+CLIENT_URL=https://shurma-platform.vercel.app
 ANTHROPIC_API_KEY=<optional — graceful fallback without it>
 STRIPE_SECRET_KEY=<optional — demo mode without it>
 STRIPE_WEBHOOK_SECRET=<optional — needed for webhook verification>
@@ -264,8 +264,8 @@ STRIPE_WEBHOOK_SECRET=<optional — needed for webhook verification>
 ### Frontend (`.env.local`)
 
 ```env
-VITE_API_URL=https://<your-render-app>.onrender.com/api
-VITE_SOCKET_URL=https://<your-render-app>.onrender.com
+VITE_API_URL=https://shurma-api.onrender.com/api
+VITE_SOCKET_URL=https://shurma-api.onrender.com
 ```
 
 > **Note:** Frontend env vars beginning with `VITE_` are embedded at build time.  
