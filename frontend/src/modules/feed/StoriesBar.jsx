@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import api from '../../api/axios';
 import { useAuthStore } from '../../store/authStore';
+import { getSocket } from '../../lib/socket';
 import { Plus, X, ChevronLeft, ChevronRight, Eye, Trash2, Loader2, Image } from 'lucide-react';
 
 const STORY_DURATION = 5000;
@@ -14,7 +15,7 @@ function ring(unviewed) {
 
 function StoryAvatar({ user, unviewed, onClick, label }) {
   return (
-    <button onClick={onClick} className="flex flex-col items-center gap-1 shrink-0 w-16">
+    <button onClick={onClick} className="flex flex-col items-center gap-1 shrink-0 w-16 hover:scale-105 active:scale-95 transition-transform">
       <div className={`p-[2.5px] rounded-full ${ring(unviewed)}`}>
         <div className="p-[2px] bg-gray-900 rounded-full">
           {user?.avatar ? (
@@ -260,11 +261,20 @@ export default function StoriesBar() {
 
   useEffect(() => { fetchStories(); }, []);
 
+  // Real-time: refresh when anyone posts a new story
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+    const onNewStory = () => fetchStories();
+    socket.on('new_story', onNewStory);
+    return () => socket.off('new_story', onNewStory);
+  }, []);
+
   const myGroup = groups.find((g) => g.user.id === user?.id);
 
   return (
     <div className="card p-3">
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
         {/* Your story / add */}
         <div className="relative shrink-0">
           <StoryAvatar

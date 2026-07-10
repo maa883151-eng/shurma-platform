@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../api/axios';
-import { MessageCircle, Repeat2, Trash2, Bookmark, PenLine, ThumbsUp, Loader2, X } from 'lucide-react';
+import {
+  MessageCircle, Repeat2, Trash2, Bookmark, PenLine, ThumbsUp,
+  Loader2, X, Heart, ChevronLeft, ChevronRight,
+} from 'lucide-react';
 
 const REACTIONS = [
   { key: 'like', emoji: '👍', label: 'Like' },
@@ -25,7 +28,7 @@ function timeAgo(ts) {
 function RichContent({ text, onHashtag }) {
   const parts = String(text || '').split(/(#[\p{L}\p{N}_]+)/gu);
   return (
-    <p className="text-gray-200 text-sm leading-relaxed whitespace-pre-line">
+    <p className="text-gray-200 text-sm leading-relaxed whitespace-pre-line break-words">
       {parts.map((part, i) =>
         part.startsWith('#') ? (
           <button
@@ -43,12 +46,54 @@ function RichContent({ text, onHashtag }) {
   );
 }
 
-function Avatar({ user, size = 'w-9 h-9' }) {
+function Avatar({ user, size = 'w-9 h-9', text = 'text-sm' }) {
   return user?.avatar ? (
-    <img src={user.avatar} alt="" className={`${size} rounded-full object-cover`} />
+    <img src={user.avatar} alt="" className={`${size} rounded-full object-cover shrink-0`} />
   ) : (
-    <div className={`${size} rounded-full bg-primary-500 flex items-center justify-center text-sm font-bold`}>
+    <div className={`${size} rounded-full bg-primary-500 flex items-center justify-center ${text} font-bold shrink-0`}>
       {user?.name?.[0]?.toUpperCase()}
+    </div>
+  );
+}
+
+// Instagram-style multi-image carousel
+function Carousel({ images, maxH = 'max-h-96' }) {
+  const [idx, setIdx] = useState(0);
+  if (!images?.length) return null;
+  if (images.length === 1) {
+    return <img src={images[0]} alt="" className={`rounded-lg ${maxH} w-full object-cover`} />;
+  }
+  return (
+    <div className="relative rounded-lg overflow-hidden group/carousel">
+      <img src={images[idx]} alt="" className={`${maxH} w-full object-cover`} />
+      {idx > 0 && (
+        <button
+          onClick={() => setIdx(idx - 1)}
+          className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover/carousel:opacity-100 transition-opacity"
+        >
+          <ChevronLeft size={18} />
+        </button>
+      )}
+      {idx < images.length - 1 && (
+        <button
+          onClick={() => setIdx(idx + 1)}
+          className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover/carousel:opacity-100 transition-opacity"
+        >
+          <ChevronRight size={18} />
+        </button>
+      )}
+      <div className="absolute top-2 right-2 bg-black/60 text-white text-[11px] px-2 py-0.5 rounded-full">
+        {idx + 1}/{images.length}
+      </div>
+      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+        {images.map((_, i) => (
+          <button
+            key={i}
+            onClick={() => setIdx(i)}
+            className={`w-1.5 h-1.5 rounded-full transition-colors ${i === idx ? 'bg-white' : 'bg-white/40'}`}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -63,9 +108,9 @@ function QuotedPost({ original, onHashtag }) {
     );
   }
   return (
-    <div className="border border-gray-800 rounded-lg p-3 space-y-2">
+    <div className="border border-gray-800 rounded-lg p-3 space-y-2 hover:border-gray-700 transition-colors">
       <Link to={`/profile/${original.user_id}`} className="flex items-center gap-2 hover:opacity-80">
-        <Avatar user={original} size="w-6 h-6" />
+        <Avatar user={original} size="w-6 h-6" text="text-xs" />
         <span className="text-xs font-semibold text-gray-200">{original.name}</span>
         {original.is_verified && <span className="text-primary-400 text-xs">✓</span>}
         <span className="text-xs text-gray-500">@{original.username} · {timeAgo(original.created_at)}</span>
@@ -74,6 +119,66 @@ function QuotedPost({ original, onHashtag }) {
       {original.image_url && (
         <img src={original.image_url} alt="" className="rounded-lg max-h-60 w-full object-cover" />
       )}
+    </div>
+  );
+}
+
+// A single comment (recursive for replies, indent capped at one level)
+function CommentNode({ comment, childrenMap, onReply, depth = 0 }) {
+  const [liked, setLiked] = useState(comment.is_liked || false);
+  const [likes, setLikes] = useState(comment.likes_count || 0);
+  const replies = childrenMap[comment.id] || [];
+
+  const toggleLike = async () => {
+    try {
+      if (liked) {
+        await api.delete(`/posts/comments/${comment.id}/like`);
+        setLiked(false);
+        setLikes((c) => Math.max(0, c - 1));
+      } else {
+        await api.post(`/posts/comments/${comment.id}/like`);
+        setLiked(true);
+        setLikes((c) => c + 1);
+      }
+    } catch {}
+  };
+
+  return (
+    <div className={depth > 0 ? 'ml-9' : ''}>
+      <div className="flex gap-2 animate-fade-in">
+        <Avatar user={comment} size="w-7 h-7" text="text-xs" />
+        <div className="flex-1 min-w-0">
+          <div className="bg-gray-800 rounded-2xl px-3 py-2 inline-block max-w-full">
+            <span className="text-xs font-semibold text-gray-200">
+              {comment.name}{comment.is_verified && <span className="text-primary-400"> ✓</span>}
+            </span>
+            <p className="text-xs text-gray-300 break-words">{comment.content}</p>
+          </div>
+          <div className="flex items-center gap-3 mt-1 px-2">
+            <span className="text-[11px] text-gray-500">{timeAgo(comment.created_at)}</span>
+            <button
+              onClick={toggleLike}
+              className={`flex items-center gap-1 text-[11px] font-medium transition-colors ${
+                liked ? 'text-red-400' : 'text-gray-500 hover:text-red-400'
+              }`}
+            >
+              <Heart size={11} fill={liked ? 'currentColor' : 'none'} />
+              {likes > 0 && likes}
+            </button>
+            <button
+              onClick={() => onReply(comment)}
+              className="text-[11px] font-medium text-gray-500 hover:text-primary-400 transition-colors"
+            >
+              Reply
+            </button>
+          </div>
+        </div>
+      </div>
+      {replies.map((r) => (
+        <div key={r.id} className="mt-2">
+          <CommentNode comment={r} childrenMap={childrenMap} onReply={onReply} depth={Math.min(depth + 1, 1)} />
+        </div>
+      ))}
     </div>
   );
 }
@@ -90,7 +195,9 @@ export default function PostCard({ post, currentUserId, onRepost, onHashtag }) {
   const [sharesCount, setSharesCount] = useState(post.shares_count || 0);
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState([]);
+  const [commentsCount, setCommentsCount] = useState(post.comments_count || 0);
   const [commentText, setCommentText] = useState('');
+  const [replyTo, setReplyTo] = useState(null);
   const [commentsLoaded, setCommentsLoaded] = useState(false);
 
   const totalReactions = Object.values(reactions).reduce((a, b) => a + b, 0);
@@ -142,9 +249,11 @@ export default function PostCard({ post, currentUserId, onRepost, onHashtag }) {
 
   const toggleComments = async () => {
     if (!commentsLoaded) {
-      const { data } = await api.get(`/posts/${post.id}/comments`);
-      setComments(data.comments);
-      setCommentsLoaded(true);
+      try {
+        const { data } = await api.get(`/posts/${post.id}/comments`);
+        setComments(data.comments);
+        setCommentsLoaded(true);
+      } catch {}
     }
     setShowComments(!showComments);
   };
@@ -153,9 +262,14 @@ export default function PostCard({ post, currentUserId, onRepost, onHashtag }) {
     e.preventDefault();
     if (!commentText.trim()) return;
     try {
-      const { data } = await api.post(`/posts/${post.id}/comments`, { content: commentText });
+      const { data } = await api.post(`/posts/${post.id}/comments`, {
+        content: commentText,
+        parent_id: replyTo?.id || undefined,
+      });
       setComments((c) => [...c, data.comment]);
+      setCommentsCount((c) => c + 1);
       setCommentText('');
+      setReplyTo(null);
     } catch {}
   };
 
@@ -177,9 +291,17 @@ export default function PostCard({ post, currentUserId, onRepost, onHashtag }) {
 
   const isPlainRepost = post.repost_of && !post.content;
   const myEmoji = myReaction ? EMOJI[myReaction] : null;
+  const gallery = post.images?.length ? post.images : post.image_url ? [post.image_url] : [];
+
+  // Build comment tree: top-level + replies grouped by parent
+  const topLevel = comments.filter((c) => !c.parent_id);
+  const childrenMap = comments.reduce((acc, c) => {
+    if (c.parent_id) (acc[c.parent_id] = acc[c.parent_id] || []).push(c);
+    return acc;
+  }, {});
 
   return (
-    <div className="card p-4 space-y-3">
+    <article className="card card-hover p-4 space-y-3 animate-slide-up">
       {isPlainRepost && (
         <div className="flex items-center gap-1.5 text-xs text-gray-500 -mb-1">
           <Repeat2 size={13} />
@@ -200,7 +322,7 @@ export default function PostCard({ post, currentUserId, onRepost, onHashtag }) {
           </div>
         </Link>
         {author.id === currentUserId && (
-          <button onClick={deletePost} className="text-gray-600 hover:text-red-400 transition-colors">
+          <button onClick={deletePost} className="text-gray-600 hover:text-red-400 transition-colors p-1">
             <Trash2 size={15} />
           </button>
         )}
@@ -208,9 +330,7 @@ export default function PostCard({ post, currentUserId, onRepost, onHashtag }) {
 
       {/* Content */}
       {post.content && <RichContent text={post.content} onHashtag={onHashtag} />}
-      {post.image_url && (
-        <img src={post.image_url} alt="" className="rounded-lg max-h-80 w-full object-cover" />
-      )}
+      {gallery.length > 0 && !post.repost_of && <Carousel images={gallery} />}
       {post.repost_of && <QuotedPost original={post.original_post} onHashtag={onHashtag} />}
 
       {/* Reaction summary */}
@@ -222,21 +342,21 @@ export default function PostCard({ post, currentUserId, onRepost, onHashtag }) {
       )}
 
       {/* Actions */}
-      <div className="flex items-center gap-4 pt-1 border-t border-gray-800/60">
+      <div className="flex items-center gap-1 pt-1 border-t border-gray-800/60">
         {/* React (Facebook-style picker) */}
         <div
-          className="relative"
+          className="relative flex-1"
           onMouseEnter={() => setShowPicker(true)}
           onMouseLeave={() => setShowPicker(false)}
         >
           {showPicker && (
-            <div className="absolute bottom-full left-0 mb-1 flex gap-1 bg-gray-800 border border-gray-700 rounded-full px-2 py-1.5 shadow-xl z-10">
+            <div className="absolute bottom-full left-0 mb-1 flex gap-1 bg-gray-800 border border-gray-700 rounded-full px-2 py-1.5 shadow-xl z-10 animate-pop">
               {REACTIONS.map((r) => (
                 <button
                   key={r.key}
                   title={r.label}
                   onClick={() => react(r.key)}
-                  className={`text-lg leading-none hover:scale-125 transition-transform ${
+                  className={`text-xl leading-none hover:scale-125 hover:-translate-y-0.5 transition-transform ${
                     myReaction === r.key ? 'scale-110 bg-gray-700 rounded-full' : ''
                   }`}
                 >
@@ -247,8 +367,8 @@ export default function PostCard({ post, currentUserId, onRepost, onHashtag }) {
           )}
           <button
             onClick={() => react(myReaction || 'like')}
-            className={`flex items-center gap-1.5 text-sm pt-2 transition-colors ${
-              myReaction ? 'text-primary-400' : 'text-gray-500 hover:text-primary-400'
+            className={`w-full flex items-center justify-center gap-1.5 text-sm py-2 mt-1 rounded-lg hover:bg-gray-800/60 transition-colors ${
+              myReaction ? 'text-primary-400' : 'text-gray-500'
             }`}
           >
             {myEmoji ? <span className="text-base leading-none">{myEmoji}</span> : <ThumbsUp size={16} />}
@@ -259,16 +379,16 @@ export default function PostCard({ post, currentUserId, onRepost, onHashtag }) {
         {/* Comments */}
         <button
           onClick={toggleComments}
-          className="flex items-center gap-1.5 text-sm pt-2 text-gray-500 hover:text-primary-400 transition-colors"
+          className="flex-1 flex items-center justify-center gap-1.5 text-sm py-2 mt-1 rounded-lg text-gray-500 hover:bg-gray-800/60 hover:text-primary-400 transition-colors"
         >
           <MessageCircle size={16} />
-          <span>{post.comments_count}</span>
+          <span>{commentsCount}</span>
         </button>
 
         {/* Repost (X-style) */}
-        <div className="relative">
+        <div className="relative flex-1">
           {showRepostMenu && (
-            <div className="absolute bottom-full left-0 mb-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-10 overflow-hidden w-36">
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-10 overflow-hidden w-36 animate-slide-down">
               <button
                 onClick={() => doRepost()}
                 disabled={reposting}
@@ -286,7 +406,7 @@ export default function PostCard({ post, currentUserId, onRepost, onHashtag }) {
           )}
           <button
             onClick={() => setShowRepostMenu(!showRepostMenu)}
-            className="flex items-center gap-1.5 text-sm pt-2 text-gray-500 hover:text-green-400 transition-colors"
+            className="w-full flex items-center justify-center gap-1.5 text-sm py-2 mt-1 rounded-lg text-gray-500 hover:bg-gray-800/60 hover:text-green-400 transition-colors"
           >
             <Repeat2 size={16} />
             <span>{sharesCount}</span>
@@ -296,17 +416,17 @@ export default function PostCard({ post, currentUserId, onRepost, onHashtag }) {
         {/* Bookmark (X/IG-style save) */}
         <button
           onClick={toggleBookmark}
-          className={`ml-auto flex items-center pt-2 transition-colors ${
+          className={`flex items-center justify-center py-2 px-3 mt-1 rounded-lg hover:bg-gray-800/60 transition-colors ${
             bookmarked ? 'text-yellow-400' : 'text-gray-500 hover:text-yellow-400'
           }`}
         >
-          <Bookmark size={16} fill={bookmarked ? 'currentColor' : 'none'} />
+          <Bookmark size={16} fill={bookmarked ? 'currentColor' : 'none'} className={bookmarked ? 'animate-pop' : ''} />
         </button>
       </div>
 
       {/* Quote composer */}
       {showQuoteBox && (
-        <div className="space-y-2 border-t border-gray-800 pt-3">
+        <div className="space-y-2 border-t border-gray-800 pt-3 animate-fade-in">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-gray-400">Quote this post</span>
             <button onClick={() => setShowQuoteBox(false)} className="text-gray-500 hover:text-gray-300">
@@ -335,29 +455,31 @@ export default function PostCard({ post, currentUserId, onRepost, onHashtag }) {
 
       {/* Comments */}
       {showComments && (
-        <div className="space-y-3 border-t border-gray-800 pt-3">
-          {comments.map((c) => (
-            <div key={c.id} className="flex gap-2">
-              <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center text-xs shrink-0">
-                {c.name?.[0]?.toUpperCase()}
-              </div>
-              <div className="bg-gray-800 rounded-lg px-3 py-2 flex-1">
-                <span className="text-xs font-medium text-gray-300">{c.name} </span>
-                <span className="text-xs text-gray-400">{c.content}</span>
-              </div>
-            </div>
+        <div className="space-y-3 border-t border-gray-800 pt-3 animate-fade-in">
+          {topLevel.map((c) => (
+            <CommentNode key={c.id} comment={c} childrenMap={childrenMap} onReply={setReplyTo} />
           ))}
+          {replyTo && (
+            <div className="flex items-center justify-between bg-gray-800/60 rounded-lg px-3 py-1.5">
+              <span className="text-xs text-gray-400">
+                Replying to <span className="font-semibold text-gray-200">{replyTo.name}</span>
+              </span>
+              <button onClick={() => setReplyTo(null)} className="text-gray-500 hover:text-gray-300">
+                <X size={13} />
+              </button>
+            </div>
+          )}
           <form onSubmit={addComment} className="flex gap-2">
             <input
-              className="input flex-1 text-sm py-1.5"
-              placeholder="Write a comment…"
+              className="input flex-1 text-sm py-1.5 rounded-full"
+              placeholder={replyTo ? `Reply to ${replyTo.name}…` : 'Write a comment…'}
               value={commentText}
               onChange={(e) => setCommentText(e.target.value)}
             />
-            <button type="submit" className="btn-primary text-sm px-3 py-1.5">Send</button>
+            <button type="submit" className="btn-primary text-sm px-4 py-1.5 rounded-full">Send</button>
           </form>
         </div>
       )}
-    </div>
+    </article>
   );
 }

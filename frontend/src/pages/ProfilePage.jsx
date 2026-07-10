@@ -3,15 +3,84 @@ import { useParams } from 'react-router-dom';
 import api from '../api/axios';
 import { useAuthStore } from '../store/authStore';
 import PostCard from '../modules/feed/PostCard';
-import { UserCheck, UserPlus, Loader2 } from 'lucide-react';
+import { UserCheck, UserPlus, Pencil, X, Loader2, CalendarDays } from 'lucide-react';
+
+function EditProfileModal({ profile, onClose, onSaved }) {
+  const [name, setName] = useState(profile.name || '');
+  const [bio, setBio] = useState(profile.bio || '');
+  const [avatar, setAvatar] = useState(profile.avatar || '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const save = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setError('');
+    try {
+      const { data } = await api.put('/users/profile', {
+        name: name.trim() || undefined,
+        bio,
+        avatar: avatar.trim() || undefined,
+      });
+      onSaved(data.user);
+      onClose();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
+      <form onSubmit={save} className="card p-5 w-full max-w-sm space-y-4 animate-slide-up" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-gray-100">Edit profile</h3>
+          <button type="button" onClick={onClose} className="text-gray-500 hover:text-gray-300"><X size={18} /></button>
+        </div>
+
+        <div className="flex justify-center">
+          {avatar ? (
+            <img src={avatar} alt="" className="w-20 h-20 rounded-full object-cover ring-2 ring-primary-500" />
+          ) : (
+            <div className="w-20 h-20 rounded-full bg-primary-500 flex items-center justify-center text-3xl font-bold ring-2 ring-primary-400">
+              {name?.[0]?.toUpperCase()}
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Name</label>
+            <input className="input text-sm" value={name} onChange={(e) => setName(e.target.value)} maxLength={100} />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Bio</label>
+            <textarea className="input text-sm resize-none" rows={3} value={bio} onChange={(e) => setBio(e.target.value)} maxLength={200} placeholder="Tell people about yourself…" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Avatar URL</label>
+            <input type="url" className="input text-sm" value={avatar} onChange={(e) => setAvatar(e.target.value)} placeholder="https://…" />
+          </div>
+        </div>
+
+        {error && <p className="text-xs text-red-400">{error}</p>}
+        <button type="submit" disabled={saving} className="btn-primary w-full text-sm">
+          {saving ? <Loader2 size={16} className="animate-spin mx-auto" /> : 'Save changes'}
+        </button>
+      </form>
+    </div>
+  );
+}
 
 export default function ProfilePage() {
   const { id } = useParams();
-  const { user: currentUser } = useAuthStore();
+  const { user: currentUser, updateUser } = useAuthStore();
   const [profile, setProfile] = useState(null);
   const [posts, setPosts] = useState([]);
   const [following, setFollowing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     fetchProfile();
@@ -23,9 +92,7 @@ export default function ProfilePage() {
     try {
       const { data } = await api.get(`/users/${id}`);
       setProfile(data.user);
-      // Check if we follow them
-      const { data: followerData } = await api.get(`/users/${id}/followers`);
-      setFollowing(followerData.followers.some((f) => f.id === currentUser?.id));
+      setFollowing(data.user.is_following || false);
     } finally { setLoading(false); }
   };
 
@@ -50,50 +117,79 @@ export default function ProfilePage() {
     } catch {}
   };
 
-  if (loading) return <div className="flex justify-center py-16"><Loader2 className="animate-spin text-primary-500" size={28} /></div>;
+  const onProfileSaved = (updated) => {
+    setProfile((p) => ({ ...p, ...updated }));
+    if (isOwn) updateUser(updated);
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <div className="card overflow-hidden">
+          <div className="skeleton h-28 rounded-none" />
+          <div className="p-5 space-y-3">
+            <div className="skeleton w-20 h-20 rounded-full -mt-14 border-4 border-gray-900" />
+            <div className="skeleton h-4 w-40" />
+            <div className="skeleton h-3 w-24" />
+          </div>
+        </div>
+      </div>
+    );
+  }
   if (!profile) return <div className="text-center py-16 text-gray-500">User not found</div>;
 
   const isOwn = currentUser?.id === id;
+  const joined = new Date(profile.created_at).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 
   return (
-    <div className="max-w-xl mx-auto space-y-6">
-      {/* Profile card */}
-      <div className="card p-6">
-        <div className="flex items-start gap-4">
-          {profile.avatar ? (
-            <img src={profile.avatar} alt="" className="w-16 h-16 rounded-full object-cover" />
-          ) : (
-            <div className="w-16 h-16 rounded-full bg-primary-500 flex items-center justify-center text-2xl font-bold shrink-0">
-              {profile.name?.[0]?.toUpperCase()}
-            </div>
-          )}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-xl font-bold text-white">{profile.name}</h2>
-              {profile.is_verified && <span className="text-xs bg-primary-500/20 text-primary-400 px-2 py-0.5 rounded-full">Verified</span>}
-            </div>
-            <p className="text-gray-500 text-sm">@{profile.username}</p>
-            {profile.bio && <p className="text-gray-300 text-sm mt-2 leading-relaxed">{profile.bio}</p>}
+    <div className="space-y-4">
+      {/* Profile card with cover */}
+      <div className="card overflow-hidden animate-slide-up">
+        <div className="h-28 bg-gradient-to-r from-primary-700 via-primary-500 to-pink-500" />
+        <div className="p-5">
+          <div className="flex items-end justify-between -mt-14 mb-3">
+            {profile.avatar ? (
+              <img src={profile.avatar} alt="" className="w-20 h-20 rounded-full object-cover border-4 border-gray-900" />
+            ) : (
+              <div className="w-20 h-20 rounded-full bg-primary-500 flex items-center justify-center text-3xl font-bold border-4 border-gray-900">
+                {profile.name?.[0]?.toUpperCase()}
+              </div>
+            )}
+            {isOwn ? (
+              <button onClick={() => setEditing(true)} className="btn-ghost flex items-center gap-2 text-sm border border-gray-700">
+                <Pencil size={14} /> Edit profile
+              </button>
+            ) : (
+              <button onClick={toggleFollow} className={following ? 'btn-ghost flex items-center gap-2 text-sm border border-gray-700' : 'btn-primary flex items-center gap-2 text-sm'}>
+                {following ? <><UserCheck size={15} /> Following</> : <><UserPlus size={15} /> Follow</>}
+              </button>
+            )}
           </div>
-          {!isOwn && (
-            <button onClick={toggleFollow} className={following ? 'btn-ghost flex items-center gap-2 text-sm' : 'btn-primary flex items-center gap-2 text-sm'}>
-              {following ? <><UserCheck size={15} /> Following</> : <><UserPlus size={15} /> Follow</>}
-            </button>
-          )}
-        </div>
 
-        <div className="grid grid-cols-3 gap-4 mt-5 pt-5 border-t border-gray-800 text-center">
-          <div>
-            <p className="text-xl font-bold text-white">{profile.posts_count}</p>
-            <p className="text-xs text-gray-500">Posts</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="text-xl font-bold text-white">{profile.name}</h2>
+            {profile.is_verified && <span className="text-xs bg-primary-500/20 text-primary-400 px-2 py-0.5 rounded-full">✓ Verified</span>}
+            {profile.is_streamer && <span className="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full">● Streamer</span>}
           </div>
-          <div>
-            <p className="text-xl font-bold text-white">{profile.followers_count}</p>
-            <p className="text-xs text-gray-500">Followers</p>
-          </div>
-          <div>
-            <p className="text-xl font-bold text-white">{profile.following_count}</p>
-            <p className="text-xs text-gray-500">Following</p>
+          <p className="text-gray-500 text-sm">@{profile.username}</p>
+          {profile.bio && <p className="text-gray-300 text-sm mt-2 leading-relaxed">{profile.bio}</p>}
+          <p className="flex items-center gap-1.5 text-xs text-gray-500 mt-2">
+            <CalendarDays size={13} /> Joined {joined}
+          </p>
+
+          <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-gray-800 text-center">
+            <div>
+              <p className="text-xl font-bold text-white">{profile.posts_count}</p>
+              <p className="text-xs text-gray-500">Posts</p>
+            </div>
+            <div>
+              <p className="text-xl font-bold text-white">{profile.followers_count}</p>
+              <p className="text-xs text-gray-500">Followers</p>
+            </div>
+            <div>
+              <p className="text-xl font-bold text-white">{profile.following_count}</p>
+              <p className="text-xs text-gray-500">Following</p>
+            </div>
           </div>
         </div>
       </div>
@@ -108,6 +204,10 @@ export default function ProfilePage() {
           ))
         )}
       </div>
+
+      {editing && (
+        <EditProfileModal profile={profile} onClose={() => setEditing(false)} onSaved={onProfileSaved} />
+      )}
     </div>
   );
 }

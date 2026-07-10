@@ -1,6 +1,7 @@
 const pool = require('../config/db');
 const { moderateContent } = require('../services/claude.service');
 const { POST_FIELDS, POST_JOIN } = require('../utils/postQuery');
+const { notify } = require('../utils/notify');
 
 const REACTIONS = ['like', 'love', 'haha', 'wow', 'sad', 'angry'];
 
@@ -9,7 +10,7 @@ const extractHashtags = (text) =>
 
 const createPost = async (req, res) => {
   try {
-    const { content, image_url, hashtags } = req.body;
+    const { content, image_url, images, hashtags } = req.body;
     if (!content?.trim()) return res.status(400).json({ error: 'Content is required' });
 
     const mod = await moderateContent(content);
@@ -18,14 +19,25 @@ const createPost = async (req, res) => {
     }
 
     const tags = hashtags?.length ? hashtags : extractHashtags(content);
+    const gallery = Array.isArray(images) ? images.filter(Boolean).slice(0, 4) : [];
+    const cover = image_url || gallery[0] || null;
+
     const { rows } = await pool.query(
-      `INSERT INTO posts (user_id, content, image_url, hashtags) VALUES ($1,$2,$3,$4)
+      `INSERT INTO posts (user_id, content, image_url, images, hashtags) VALUES ($1,$2,$3,$4,$5)
        RETURNING *`,
-      [req.user.id, content.trim(), image_url || null, tags.length ? tags : null]
+      [req.user.id, content.trim(), cover, gallery.length ? gallery : null, tags.length ? tags : null]
     );
     await pool.query('UPDATE users SET posts_count=posts_count+1 WHERE id=$1', [req.user.id]);
 
-    const post = { ...rows[0], reactions: {}, author: { id: req.user.id, name: req.user.name, username: req.user.username, avatar: req.user.avatar } };
+    const post = {
+      ...rows[0],
+      reactions: {},
+      name: req.user.name,
+      username: req.user.username,
+      avatar: req.user.avatar,
+      is_verified: req.user.is_verified,
+      author: { id: req.user.id, name: req.user.name, username: req.user.username, avatar: req.user.avatar },
+    };
 
     const io = req.app.get('io');
     if (io) io.emit('new_post', post);
@@ -98,6 +110,13 @@ const reactToPost = async (req, res) => {
     );
     if (rows[0]?.inserted) {
       await pool.query('UPDATE posts SET likes_count=likes_count+1 WHERE id=$1', [req.params.id]);
+      const { rows: owner } = await pool.query('SELECT user_id FROM posts WHERE id=$1', [req.params.id]);
+      if (owner[0]) {
+        notify(req.app.get('io'), {
+          userId: owner[0].user_id, actor: req.user, type: 'reaction',
+          postId: req.params.id, meta: { reaction },
+        });
+      }
     }
     res.json({ reaction, reactions: await getReactionCounts(req.params.id) });
   } catch (err) {
@@ -130,7 +149,7 @@ const unlikePost = removeReaction;
 const repostPost = async (req, res) => {
   try {
     const content = req.body?.content?.trim() || '';
-    const { rows: origRows } = await pool.query('SELECT id, content, repost_of FROM posts WHERE id=$1', [req.params.id]);
+    const { rows: origRows } = await pool.query('SELECT id, user_id, content, repost_of FROM posts WHERE id=$1', [req.params.id]);
     if (!origRows[0]) return res.status(404).json({ error: 'Post not found' });
 
     // Reposting a plain repost points at the root post instead
@@ -158,6 +177,14 @@ const repostPost = async (req, res) => {
     );
     await pool.query('UPDATE posts SET shares_count=shares_count+1 WHERE id=$1', [targetId]);
     await pool.query('UPDATE users SET posts_count=posts_count+1 WHERE id=$1', [req.user.id]);
+
+    const { rows: target } = await pool.query('SELECT user_id FROM posts WHERE id=$1', [targetId]);
+    if (target[0]) {
+      notify(req.app.get('io'), {
+        userId: target[0].user_id, actor: req.user,
+        type: content ? 'quote' : 'repost', postId: rows[0].id,
+      });
+    }
 
     const { rows: full } = await pool.query(
       `SELECT ${POST_FIELDS} ${POST_JOIN} WHERE p.id=$2`,
@@ -211,12 +238,16 @@ const getBookmarks = async (req, res) => {
   }
 };
 
+// ---- Comments: threaded, with likes ----
+
 const getComments = async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT c.*, u.name, u.username, u.avatar FROM comments c
-       JOIN users u ON u.id = c.user_id WHERE c.post_id=$1 ORDER BY c.created_at ASC LIMIT 50`,
-      [req.params.id]
+      `SELECT c.*, u.name, u.username, u.avatar, u.is_verified,
+              EXISTS(SELECT 1 FROM comment_likes cl WHERE cl.comment_id=c.id AND cl.user_id=$2) AS is_liked
+       FROM comments c
+       JOIN users u ON u.id = c.user_id WHERE c.post_id=$1 ORDER BY c.created_at ASC LIMIT 100`,
+      [req.params.id, req.user.id]
     );
     res.json({ comments: rows });
   } catch (err) {
@@ -226,20 +257,74 @@ const getComments = async (req, res) => {
 
 const addComment = async (req, res) => {
   try {
-    const { content } = req.body;
+    const { content, parent_id } = req.body;
     if (!content?.trim()) return res.status(400).json({ error: 'Comment cannot be empty' });
 
     const { rows } = await pool.query(
-      `INSERT INTO comments (user_id, post_id, content) VALUES ($1,$2,$3) RETURNING *`,
-      [req.user.id, req.params.id, content.trim()]
+      `INSERT INTO comments (user_id, post_id, content, parent_id) VALUES ($1,$2,$3,$4) RETURNING *`,
+      [req.user.id, req.params.id, content.trim(), parent_id || null]
     );
     await pool.query('UPDATE posts SET comments_count=comments_count+1 WHERE id=$1', [req.params.id]);
 
-    const comment = { ...rows[0], name: req.user.name, username: req.user.username, avatar: req.user.avatar };
     const io = req.app.get('io');
+
+    // Notify the post owner (comment) and, for replies, the parent comment author
+    const { rows: owner } = await pool.query('SELECT user_id FROM posts WHERE id=$1', [req.params.id]);
+    if (owner[0]) {
+      notify(io, {
+        userId: owner[0].user_id, actor: req.user, type: 'comment',
+        postId: req.params.id, commentId: rows[0].id,
+        meta: { preview: content.trim().slice(0, 80) },
+      });
+    }
+    if (parent_id) {
+      const { rows: parent } = await pool.query('SELECT user_id FROM comments WHERE id=$1', [parent_id]);
+      if (parent[0] && parent[0].user_id !== owner[0]?.user_id) {
+        notify(io, {
+          userId: parent[0].user_id, actor: req.user, type: 'reply',
+          postId: req.params.id, commentId: rows[0].id,
+          meta: { preview: content.trim().slice(0, 80) },
+        });
+      }
+    }
+
+    const comment = {
+      ...rows[0], name: req.user.name, username: req.user.username,
+      avatar: req.user.avatar, is_verified: req.user.is_verified, is_liked: false,
+    };
     if (io) io.to(`post:${req.params.id}`).emit('new_comment', comment);
 
     res.status(201).json({ comment });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+const likeComment = async (req, res) => {
+  try {
+    const r = await pool.query(
+      'INSERT INTO comment_likes (comment_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',
+      [req.params.commentId, req.user.id]
+    );
+    if (r.rowCount > 0) {
+      await pool.query('UPDATE comments SET likes_count=likes_count+1 WHERE id=$1', [req.params.commentId]);
+    }
+    res.json({ liked: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+const unlikeComment = async (req, res) => {
+  try {
+    const r = await pool.query(
+      'DELETE FROM comment_likes WHERE comment_id=$1 AND user_id=$2',
+      [req.params.commentId, req.user.id]
+    );
+    if (r.rowCount > 0) {
+      await pool.query('UPDATE comments SET likes_count=GREATEST(likes_count-1,0) WHERE id=$1', [req.params.commentId]);
+    }
+    res.json({ liked: false });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -249,5 +334,5 @@ module.exports = {
   createPost, getPost, getUserPosts, deletePost,
   likePost, unlikePost, reactToPost, removeReaction,
   repostPost, bookmarkPost, unbookmarkPost, getBookmarks,
-  getComments, addComment,
+  getComments, addComment, likeComment, unlikeComment,
 };

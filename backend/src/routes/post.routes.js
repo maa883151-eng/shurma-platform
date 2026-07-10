@@ -5,7 +5,7 @@ const {
   createPost, getPost, getUserPosts, deletePost,
   likePost, unlikePost, reactToPost, removeReaction,
   repostPost, bookmarkPost, unbookmarkPost, getBookmarks,
-  getComments, addComment
+  getComments, addComment, likeComment, unlikeComment
 } = require('../controllers/post.controller');
 
 router.post('/', auth, createPost);
@@ -22,5 +22,7 @@ router.post('/:id/bookmark', auth, bookmarkPost);
 router.delete('/:id/bookmark', auth, unbookmarkPost);
 router.get('/:id/comments', auth, getComments);
 router.post('/:id/comments', auth, addComment);
+router.post('/comments/:commentId/like', auth, likeComment);
+router.delete('/comments/:commentId/like', auth, unlikeComment);
 
 module.exports = router;

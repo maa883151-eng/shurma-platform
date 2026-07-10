@@ -20,15 +20,38 @@
 
 @layer components {
   .btn-primary {
-    @apply bg-primary-500 hover:bg-primary-600 text-white font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply bg-primary-500 hover:bg-primary-600 active:scale-95 text-white font-medium px-4 py-2 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed;
   }
   .btn-ghost {
-    @apply bg-transparent hover:bg-gray-800 text-gray-300 font-medium px-4 py-2 rounded-lg transition-colors;
+    @apply bg-transparent hover:bg-gray-800 active:scale-95 text-gray-300 font-medium px-4 py-2 rounded-lg transition-all;
   }
   .card {
     @apply bg-gray-900 border border-gray-800 rounded-xl;
   }
+  .card-hover {
+    @apply hover:border-gray-700 transition-colors;
+  }
   .input {
     @apply bg-gray-800 border border-gray-700 text-gray-100 placeholder-gray-500 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition;
+  }
+  /* Shimmering skeleton block */
+  .skeleton {
+    @apply relative overflow-hidden bg-gray-800 rounded-lg;
+  }
+  .skeleton::after {
+    content: '';
+    @apply absolute inset-0 -translate-x-full;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+    animation: shimmer 1.4s infinite;
+  }
+}
+
+@layer utilities {
+  .scrollbar-hide {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
   }
 }

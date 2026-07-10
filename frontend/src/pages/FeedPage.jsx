@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import api from '../api/axios';
 import { useAuthStore } from '../store/authStore';
+import { getSocket } from '../lib/socket';
 import PostCard from '../modules/feed/PostCard';
 import CreatePost from '../modules/feed/CreatePost';
 import StoriesBar from '../modules/feed/StoriesBar';
-import { Loader2, TrendingUp, X } from 'lucide-react';
+import { TrendingUp, X, ArrowUp } from 'lucide-react';
 
 const TABS = [
   { key: 'feed', label: 'For You' },
@@ -12,13 +14,36 @@ const TABS = [
   { key: 'saved', label: 'Saved' },
 ];
 
+function PostSkeleton() {
+  return (
+    <div className="card p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <div className="skeleton w-9 h-9 rounded-full" />
+        <div className="space-y-1.5">
+          <div className="skeleton h-3 w-28" />
+          <div className="skeleton h-2.5 w-20" />
+        </div>
+      </div>
+      <div className="space-y-2">
+        <div className="skeleton h-3 w-full" />
+        <div className="skeleton h-3 w-4/5" />
+        <div className="skeleton h-3 w-2/5" />
+      </div>
+      <div className="skeleton h-40 w-full" />
+    </div>
+  );
+}
+
 export default function FeedPage() {
   const { user } = useAuthStore();
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('feed');
   const [trending, setTrending] = useState([]);
-  const [activeTag, setActiveTag] = useState(null);
+  const [pending, setPending] = useState([]);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTag = searchParams.get('tag');
+  const pendingRef = useRef([]);
 
   const fetchFeed = async () => {
     setLoading(true);
@@ -29,6 +54,8 @@ export default function FeedPage() {
       else if (tab === 'saved') endpoint = '/posts/bookmarks/me';
       const { data } = await api.get(endpoint);
       setPosts(data.posts);
+      setPending([]);
+      pendingRef.current = [];
     } catch {
       setPosts([]);
     } finally {
@@ -41,22 +68,43 @@ export default function FeedPage() {
     api.get('/feed/trending').then(({ data }) => setTrending(data.trending)).catch(() => {});
   }, []);
 
+  // Real-time: queue new posts from others, show a "new posts" pill
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+    const onNewPost = (post) => {
+      if (post.user_id === user?.id || post.author?.id === user?.id) return;
+      pendingRef.current = [post, ...pendingRef.current];
+      setPending([...pendingRef.current]);
+    };
+    socket.on('new_post', onNewPost);
+    return () => socket.off('new_post', onNewPost);
+  }, [user?.id]);
+
+  const showPending = () => {
+    setPosts((prev) => [...pendingRef.current, ...prev]);
+    pendingRef.current = [];
+    setPending([]);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const onNewPost = (post) => setPosts((prev) => [post, ...prev]);
-  const onHashtag = (tag) => { setActiveTag(tag); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const onHashtag = (tag) => setSearchParams({ tag });
+  const clearTag = () => setSearchParams({});
 
   return (
-    <div className="max-w-xl mx-auto space-y-4">
+    <div className="space-y-4">
       <StoriesBar />
       <CreatePost onPost={onNewPost} />
 
-      {/* Trending hashtags */}
+      {/* Trending hashtags (mobile/tablet — desktop shows them in the right rail) */}
       {trending.length > 0 && (
-        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+        <div className="flex xl:hidden items-center gap-2 overflow-x-auto scrollbar-hide pb-1">
           <TrendingUp size={15} className="text-primary-400 shrink-0" />
           {trending.map((t) => (
             <button
               key={t.tag}
-              onClick={() => setActiveTag(activeTag === t.tag ? null : t.tag)}
+              onClick={() => (activeTag === t.tag ? clearTag() : setSearchParams({ tag: t.tag }))}
               className={`shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors ${
                 activeTag === t.tag
                   ? 'bg-primary-500 border-primary-500 text-white'
@@ -71,16 +119,16 @@ export default function FeedPage() {
 
       {/* Active hashtag banner */}
       {activeTag ? (
-        <div className="flex items-center justify-between card px-4 py-2.5">
+        <div className="flex items-center justify-between card px-4 py-2.5 animate-fade-in">
           <span className="text-sm text-gray-300">
             Posts tagged <span className="text-primary-400 font-semibold">#{activeTag}</span>
           </span>
-          <button onClick={() => setActiveTag(null)} className="text-gray-500 hover:text-gray-200">
+          <button onClick={clearTag} className="text-gray-500 hover:text-gray-200">
             <X size={16} />
           </button>
         </div>
       ) : (
-        <div className="flex gap-1 bg-gray-900 rounded-xl p-1 border border-gray-800">
+        <div className="flex gap-1 bg-gray-900 rounded-xl p-1 border border-gray-800 sticky top-14 z-30">
           {TABS.map((t) => (
             <button
               key={t.key}
@@ -95,12 +143,25 @@ export default function FeedPage() {
         </div>
       )}
 
+      {/* New posts pill */}
+      {pending.length > 0 && (
+        <button
+          onClick={showPending}
+          className="mx-auto flex items-center gap-1.5 bg-primary-500 hover:bg-primary-600 text-white text-xs font-semibold px-4 py-2 rounded-full shadow-lg animate-slide-down sticky top-28 z-30"
+        >
+          <ArrowUp size={13} />
+          {pending.length} new {pending.length === 1 ? 'post' : 'posts'}
+        </button>
+      )}
+
       {loading ? (
-        <div className="flex justify-center py-12">
-          <Loader2 className="animate-spin text-primary-500" size={28} />
+        <div className="space-y-4">
+          <PostSkeleton />
+          <PostSkeleton />
+          <PostSkeleton />
         </div>
       ) : posts.length === 0 ? (
-        <div className="text-center py-12 text-gray-500">
+        <div className="text-center py-12 text-gray-500 animate-fade-in">
           <p className="text-lg font-medium mb-2">
             {tab === 'saved' && !activeTag ? 'No saved posts' : 'No posts yet'}
           </p>

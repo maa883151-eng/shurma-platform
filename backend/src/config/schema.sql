@@ -113,6 +113,34 @@ CREATE TABLE IF NOT EXISTS story_views (
   UNIQUE(story_id, user_id)
 );
 
+-- Instagram-style carousel posts (multiple images)
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS images TEXT[];
+
+-- Threaded comments with likes (Facebook/Instagram-style)
+ALTER TABLE comments ADD COLUMN IF NOT EXISTS parent_id UUID REFERENCES comments(id) ON DELETE CASCADE;
+ALTER TABLE comments ADD COLUMN IF NOT EXISTS likes_count INTEGER DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS comment_likes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  comment_id UUID REFERENCES comments(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(comment_id, user_id)
+);
+
+-- Notifications (all platforms)
+CREATE TABLE IF NOT EXISTS notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  actor_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  type VARCHAR(20) NOT NULL,
+  post_id UUID REFERENCES posts(id) ON DELETE CASCADE,
+  comment_id UUID REFERENCES comments(id) ON DELETE CASCADE,
+  meta JSONB DEFAULT '{}',
+  is_read BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
 -- ---------- Chat module (from ChatsApp) ----------
 CREATE TABLE IF NOT EXISTS chats (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -351,6 +379,10 @@ CREATE INDEX IF NOT EXISTS idx_shop_cart_user ON shop_cart_items(user_id);
 CREATE INDEX IF NOT EXISTS idx_shop_orders_user ON shop_orders(user_id);
 CREATE INDEX IF NOT EXISTS idx_shop_order_items_order ON shop_order_items(order_id);
 CREATE INDEX IF NOT EXISTS idx_shop_reviews_product ON shop_reviews(product_id);
+CREATE INDEX IF NOT EXISTS idx_comments_parent ON comments(parent_id);
+CREATE INDEX IF NOT EXISTS idx_comment_likes_comment ON comment_likes(comment_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(user_id) WHERE NOT is_read;
 CREATE INDEX IF NOT EXISTS idx_posts_repost_of ON posts(repost_of);
 CREATE INDEX IF NOT EXISTS idx_posts_hashtags ON posts USING GIN(hashtags);
 CREATE INDEX IF NOT EXISTS idx_bookmarks_user ON bookmarks(user_id);

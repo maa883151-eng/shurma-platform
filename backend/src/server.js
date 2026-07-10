@@ -41,6 +41,7 @@ app.use('/api/users', require('./routes/user.routes'));
 app.use('/api/feed', require('./routes/feed.routes'));
 app.use('/api/posts', require('./routes/post.routes'));
 app.use('/api/stories', require('./routes/story.routes'));
+app.use('/api/notifications', require('./routes/notification.routes'));
 app.use('/api/chats', require('./routes/chat.routes'));
 app.use('/api/messages', require('./routes/message.routes'));
 app.use('/api/streams', require('./routes/stream.routes'));
