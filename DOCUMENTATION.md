@@ -87,6 +87,9 @@ All primary keys are UUID (`gen_random_uuid()`). The schema is idempotent — sa
 | `comments` | Post comments |
 | `follows` | Follow relationships (also used by StreamFlow) |
 | `feed_scores` | AI-computed feed relevance scores |
+| `bookmarks` | Saved posts (X/Instagram-style saves) |
+| `stories` | 24-hour ephemeral stories (text/image, auto-expire) |
+| `story_views` | Story view tracking |
 | `chats` | Chat conversations (DM and group) |
 | `chat_participants` | Chat membership |
 | `messages` | Chat messages with reply threading |
@@ -143,6 +146,8 @@ Authorization: Bearer <jwt_token>
 |--------|----------|-------------|
 | GET | `/feed` | AI-ranked personal feed |
 | GET | `/feed/explore` | Top posts by engagement |
+| GET | `/feed/trending` | Top 10 hashtags over the last 7 days |
+| GET | `/feed/hashtag/:tag` | Posts tagged with a hashtag |
 
 ### Posts
 
@@ -152,10 +157,26 @@ Authorization: Bearer <jwt_token>
 | GET | `/posts/:id` | Get post |
 | GET | `/posts/user/:id` | Get user's posts |
 | DELETE | `/posts/:id` | Delete own post |
-| POST | `/posts/:id/like` | Like |
+| POST | `/posts/:id/like` | Like (legacy — same as 'like' reaction) |
 | DELETE | `/posts/:id/like` | Unlike |
+| POST | `/posts/:id/react` | React (`{reaction: like\|love\|haha\|wow\|sad\|angry}`) |
+| DELETE | `/posts/:id/react` | Remove reaction |
+| POST | `/posts/:id/repost` | Repost, or quote-post with `{content}` |
+| POST | `/posts/:id/bookmark` | Save post |
+| DELETE | `/posts/:id/bookmark` | Unsave post |
+| GET | `/posts/bookmarks/me` | List saved posts |
 | GET | `/posts/:id/comments` | Get comments |
 | POST | `/posts/:id/comments` | Add comment |
+
+### Stories
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/stories` | Active stories from self + followed, grouped by author |
+| POST | `/stories` | Create story (`{content?, image_url?, bg_color?}`, 24h TTL) |
+| POST | `/stories/:id/view` | Record a view |
+| GET | `/stories/:id/views` | List viewers (owner only) |
+| DELETE | `/stories/:id` | Delete own story |
 
 ### Chats & Messages
 
@@ -234,8 +255,9 @@ Authorization: Bearer <jwt_token>
 |-------|---------|-------------|
 | `new_message` | message object | Real-time message |
 | `user_typing` | `{userId, name, isTyping}` | Typing indicator |
-| `new_post` | post object | New post in feed |
+| `new_post` | post object | New post in feed (incl. reposts) |
 | `new_comment` | comment object | New comment |
+| `new_story` | story object | New story published |
 | `stream_started` | stream object | Stream went live |
 | `stream_ended` | `{streamId}` | Stream ended |
 | `stream_comment` | comment object | Live stream chat |

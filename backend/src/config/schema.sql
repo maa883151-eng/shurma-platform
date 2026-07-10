@@ -77,6 +77,42 @@ CREATE TABLE IF NOT EXISTS feed_scores (
   UNIQUE(user_id, post_id)
 );
 
+-- ---------- Super Social: reactions, reposts, bookmarks, stories ----------
+-- Facebook-style reactions: extend likes with a reaction type
+ALTER TABLE likes ADD COLUMN IF NOT EXISTS reaction VARCHAR(10) DEFAULT 'like';
+
+-- X-style reposts / quote posts: a post can point at an original
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS repost_of UUID REFERENCES posts(id) ON DELETE CASCADE;
+
+-- X/Instagram-style saves
+CREATE TABLE IF NOT EXISTS bookmarks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  post_id UUID REFERENCES posts(id) ON DELETE CASCADE,
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(user_id, post_id)
+);
+
+-- Instagram-style 24h stories
+CREATE TABLE IF NOT EXISTS stories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  content TEXT,
+  image_url VARCHAR(500),
+  bg_color VARCHAR(20) DEFAULT '#7c3aed',
+  views_count INTEGER DEFAULT 0,
+  expires_at TIMESTAMP DEFAULT NOW() + INTERVAL '24 hours',
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS story_views (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  story_id UUID REFERENCES stories(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(story_id, user_id)
+);
+
 -- ---------- Chat module (from ChatsApp) ----------
 CREATE TABLE IF NOT EXISTS chats (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -315,5 +351,12 @@ CREATE INDEX IF NOT EXISTS idx_shop_cart_user ON shop_cart_items(user_id);
 CREATE INDEX IF NOT EXISTS idx_shop_orders_user ON shop_orders(user_id);
 CREATE INDEX IF NOT EXISTS idx_shop_order_items_order ON shop_order_items(order_id);
 CREATE INDEX IF NOT EXISTS idx_shop_reviews_product ON shop_reviews(product_id);
+CREATE INDEX IF NOT EXISTS idx_posts_repost_of ON posts(repost_of);
+CREATE INDEX IF NOT EXISTS idx_posts_hashtags ON posts USING GIN(hashtags);
+CREATE INDEX IF NOT EXISTS idx_bookmarks_user ON bookmarks(user_id);
+CREATE INDEX IF NOT EXISTS idx_bookmarks_post ON bookmarks(post_id);
+CREATE INDEX IF NOT EXISTS idx_stories_user ON stories(user_id);
+CREATE INDEX IF NOT EXISTS idx_stories_expires ON stories(expires_at);
+CREATE INDEX IF NOT EXISTS idx_story_views_story ON story_views(story_id);
 CREATE INDEX IF NOT EXISTS idx_guard_logs_verdict ON guard_logs(verdict);
 CREATE INDEX IF NOT EXISTS idx_guard_logs_created ON guard_logs(created_at DESC);
