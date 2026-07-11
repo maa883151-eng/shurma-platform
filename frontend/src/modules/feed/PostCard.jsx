@@ -3,8 +3,10 @@ import { Link } from 'react-router-dom';
 import api from '../../api/axios';
 import {
   MessageCircle, Repeat2, Trash2, Bookmark, PenLine, ThumbsUp,
-  Loader2, X, Heart, ChevronLeft, ChevronRight,
+  Loader2, X, Heart, ChevronLeft, ChevronRight, Clock,
 } from 'lucide-react';
+import VideoPlayer from '../../components/VideoPlayer';
+import PollCard from '../../components/PollCard';
 
 const REACTIONS = [
   { key: 'like', emoji: '👍', label: 'Like' },
@@ -188,6 +190,7 @@ export default function PostCard({ post, currentUserId, onRepost, onHashtag }) {
   const [reactions, setReactions] = useState(post.reactions || {});
   const [showPicker, setShowPicker] = useState(false);
   const [bookmarked, setBookmarked] = useState(post.is_bookmarked || false);
+  const [watchLater, setWatchLater] = useState(post.in_watch_later || false);
   const [showRepostMenu, setShowRepostMenu] = useState(false);
   const [showQuoteBox, setShowQuoteBox] = useState(false);
   const [quoteText, setQuoteText] = useState('');
@@ -227,6 +230,18 @@ export default function PostCard({ post, currentUserId, onRepost, onHashtag }) {
       } else {
         await api.post(`/posts/${post.id}/bookmark`);
         setBookmarked(true);
+      }
+    } catch {}
+  };
+
+  const toggleWatchLater = async () => {
+    try {
+      if (watchLater) {
+        await api.delete(`/playlists/watch-later/${post.id}`);
+        setWatchLater(false);
+      } else {
+        await api.post('/playlists/watch-later', { post_id: post.id });
+        setWatchLater(true);
       }
     } catch {}
   };
@@ -330,8 +345,10 @@ export default function PostCard({ post, currentUserId, onRepost, onHashtag }) {
 
       {/* Content */}
       {post.content && <RichContent text={post.content} onHashtag={onHashtag} />}
-      {gallery.length > 0 && !post.repost_of && <Carousel images={gallery} />}
+      {post.video_url && !post.repost_of && <VideoPlayer src={post.video_url} poster={gallery[0]} className="w-full" />}
+      {!post.video_url && gallery.length > 0 && !post.repost_of && <Carousel images={gallery} />}
       {post.repost_of && <QuotedPost original={post.original_post} onHashtag={onHashtag} />}
+      {post.poll_id && <PollCard poll={post.poll} postId={post.id} />}
 
       {/* Reaction summary */}
       {totalReactions > 0 && (
@@ -416,12 +433,26 @@ export default function PostCard({ post, currentUserId, onRepost, onHashtag }) {
         {/* Bookmark (X/IG-style save) */}
         <button
           onClick={toggleBookmark}
-          className={`flex items-center justify-center py-2 px-3 mt-1 rounded-lg hover:bg-gray-800/60 transition-colors ${
+          className={`flex items-center justify-center py-2 px-2 mt-1 rounded-lg hover:bg-gray-800/60 transition-colors ${
             bookmarked ? 'text-yellow-400' : 'text-gray-500 hover:text-yellow-400'
           }`}
+          title="Save"
         >
           <Bookmark size={16} fill={bookmarked ? 'currentColor' : 'none'} className={bookmarked ? 'animate-pop' : ''} />
         </button>
+
+        {/* Watch Later (YouTube-style) */}
+        {(post.video_url) && (
+          <button
+            onClick={toggleWatchLater}
+            className={`flex items-center justify-center py-2 px-2 mt-1 rounded-lg hover:bg-gray-800/60 transition-colors ${
+              watchLater ? 'text-primary-400' : 'text-gray-500 hover:text-primary-400'
+            }`}
+            title="Watch Later"
+          >
+            <Clock size={16} className={watchLater ? 'animate-pop' : ''} />
+          </button>
+        )}
       </div>
 
       {/* Quote composer */}

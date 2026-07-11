@@ -2,15 +2,17 @@ import { NavLink } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import {
   Home, MessageCircle, Radio, ShoppingBag, Shield,
-  User, LogOut, Zap
+  User, LogOut, Zap, ListVideo, Tv2,
 } from 'lucide-react';
 
 const navItems = [
-  { to: '/feed',    icon: Home,         label: 'Feed'      },
-  { to: '/chats',   icon: MessageCircle, label: 'Chats'    },
-  { to: '/streams', icon: Radio,         label: 'Streams'  },
-  { to: '/shop',    icon: ShoppingBag,   label: 'Shop'     },
-  { to: '/guard',   icon: Shield,        label: 'Guard'    },
+  { to: '/feed',     icon: Home,          label: 'Feed'      },
+  { to: '/chats',    icon: MessageCircle, label: 'Chats'     },
+  { to: '/channels', icon: Tv2,           label: 'Channels'  },
+  { to: '/streams',  icon: Radio,         label: 'Live'      },
+  { to: '/library',  icon: ListVideo,     label: 'Library'   },
+  { to: '/shop',     icon: ShoppingBag,   label: 'Shop'      },
+  { to: '/guard',    icon: Shield,        label: 'Guard'     },
 ];
 
 export default function Sidebar() {

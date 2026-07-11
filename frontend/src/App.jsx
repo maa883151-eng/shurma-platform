@@ -12,6 +12,8 @@ import StreamPage from './pages/StreamPage';
 import ShopPage from './pages/ShopPage';
 import GuardPage from './pages/GuardPage';
 import ProfilePage from './pages/ProfilePage';
+import ChannelsPage from './pages/ChannelsPage';
+import PlaylistsPage from './pages/PlaylistsPage';
 
 function ProtectedRoute({ children }) {
   const { token } = useAuthStore();
@@ -43,10 +45,13 @@ export default function App() {
           <Route path="feed" element={<FeedPage />} />
           <Route path="chats" element={<ChatPage />} />
           <Route path="chats/:chatId" element={<ChatPage />} />
+          <Route path="channels" element={<ChannelsPage />} />
+          <Route path="channels/:handle" element={<ChannelsPage />} />
           <Route path="streams" element={<StreamPage />} />
           <Route path="streams/:streamId" element={<StreamPage />} />
           <Route path="shop" element={<ShopPage />} />
           <Route path="shop/:slug" element={<ShopPage />} />
+          <Route path="library" element={<PlaylistsPage />} />
           <Route path="guard" element={<GuardPage />} />
           <Route path="profile/:id" element={<ProfilePage />} />
         </Route>

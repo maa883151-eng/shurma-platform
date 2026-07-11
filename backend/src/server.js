@@ -46,6 +46,9 @@ app.use('/api/chats', require('./routes/chat.routes'));
 app.use('/api/messages', require('./routes/message.routes'));
 app.use('/api/streams', require('./routes/stream.routes'));
 app.use('/api/guard', require('./routes/guard.routes'));
+app.use('/api/channels', require('./routes/channels.routes'));
+app.use('/api/polls', require('./routes/polls.routes'));
+app.use('/api/playlists', require('./routes/playlists.routes'));
 
 // ── Health check ──
 app.get('/health', (req, res) => res.json({ status: 'ok', service: 'shurma-api', ts: new Date().toISOString() }));

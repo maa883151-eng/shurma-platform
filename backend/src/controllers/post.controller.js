@@ -3,6 +3,8 @@ const { moderateContent } = require('../services/claude.service');
 const { POST_FIELDS, POST_JOIN } = require('../utils/postQuery');
 const { notify } = require('../utils/notify');
 
+const { createPoll } = require('./polls.controller');
+
 const REACTIONS = ['like', 'love', 'haha', 'wow', 'sad', 'angry'];
 
 const extractHashtags = (text) =>
@@ -10,7 +12,7 @@ const extractHashtags = (text) =>
 
 const createPost = async (req, res) => {
   try {
-    const { content, image_url, images, hashtags } = req.body;
+    const { content, image_url, images, hashtags, video_url, poll } = req.body;
     if (!content?.trim()) return res.status(400).json({ error: 'Content is required' });
 
     const mod = await moderateContent(content);
@@ -22,27 +24,44 @@ const createPost = async (req, res) => {
     const gallery = Array.isArray(images) ? images.filter(Boolean).slice(0, 4) : [];
     const cover = image_url || gallery[0] || null;
 
-    const { rows } = await pool.query(
-      `INSERT INTO posts (user_id, content, image_url, images, hashtags) VALUES ($1,$2,$3,$4,$5)
-       RETURNING *`,
-      [req.user.id, content.trim(), cover, gallery.length ? gallery : null, tags.length ? tags : null]
-    );
-    await pool.query('UPDATE users SET posts_count=posts_count+1 WHERE id=$1', [req.user.id]);
+    const client = await pool.connect();
+    let pollId = null;
+    try {
+      await client.query('BEGIN');
 
-    const post = {
-      ...rows[0],
-      reactions: {},
-      name: req.user.name,
-      username: req.user.username,
-      avatar: req.user.avatar,
-      is_verified: req.user.is_verified,
-      author: { id: req.user.id, name: req.user.name, username: req.user.username, avatar: req.user.avatar },
-    };
+      // Create poll if provided
+      if (poll?.question && poll?.options?.length >= 2) {
+        pollId = await createPoll(client, poll);
+      }
 
-    const io = req.app.get('io');
-    if (io) io.emit('new_post', post);
+      const { rows } = await client.query(
+        `INSERT INTO posts (user_id, content, image_url, images, hashtags, video_url, poll_id) VALUES ($1,$2,$3,$4,$5,$6,$7)
+         RETURNING *`,
+        [req.user.id, content.trim(), cover, gallery.length ? gallery : null, tags.length ? tags : null, video_url || null, pollId]
+      );
+      await client.query('UPDATE users SET posts_count=posts_count+1 WHERE id=$1', [req.user.id]);
+      await client.query('COMMIT');
 
-    res.status(201).json({ post });
+      const post = {
+        ...rows[0],
+        reactions: {},
+        name: req.user.name,
+        username: req.user.username,
+        avatar: req.user.avatar,
+        is_verified: req.user.is_verified,
+        author: { id: req.user.id, name: req.user.name, username: req.user.username, avatar: req.user.avatar },
+      };
+
+      const io = req.app.get('io');
+      if (io) io.emit('new_post', post);
+
+      return res.status(201).json({ post });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   } catch (err) {
     console.error('createPost:', err.message);
     res.status(500).json({ error: err.message });

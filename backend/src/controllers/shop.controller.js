@@ -253,7 +253,111 @@ const stripeWebhook = async (req, res) => {
   }
 };
 
+// ── Wishlist ──
+const getWishlist = async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT p.*, sc.name AS category_name, sv.shop_name, sv.slug AS vendor_slug,
+              wl.created_at AS wishlisted_at
+       FROM shop_wishlists wl
+       JOIN shop_products p ON p.id=wl.product_id
+       JOIN shop_vendors sv ON sv.id=p.vendor_id
+       LEFT JOIN shop_categories sc ON sc.id=p.category_id
+       WHERE wl.user_id=$1
+       ORDER BY wl.created_at DESC`,
+      [req.user.id]
+    );
+    res.json({ wishlist: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+const addToWishlist = async (req, res) => {
+  try {
+    const { product_id } = req.body;
+    if (!product_id) return res.status(400).json({ error: 'product_id required' });
+    const { rowCount } = await pool.query(
+      'INSERT INTO shop_wishlists (user_id, product_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',
+      [req.user.id, product_id]
+    );
+    res.json({ added: rowCount > 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+const removeFromWishlist = async (req, res) => {
+  try {
+    await pool.query('DELETE FROM shop_wishlists WHERE user_id=$1 AND product_id=$2', [req.user.id, req.params.productId]);
+    res.json({ removed: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ── Flash Deals ──
+const getFlashDeals = async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT p.*, sc.name AS category_name, sv.shop_name, sv.slug AS vendor_slug
+       FROM shop_products p
+       JOIN shop_vendors sv ON sv.id=p.vendor_id
+       LEFT JOIN shop_categories sc ON sc.id=p.category_id
+       WHERE p.is_active=TRUE AND p.deal_price IS NOT NULL AND p.deal_ends_at > NOW()
+       ORDER BY p.deal_ends_at ASC
+       LIMIT 12`,
+      []
+    );
+    res.json({ deals: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+const setFlashDeal = async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const { deal_price, deal_ends_at } = req.body;
+    const { rows: vendor } = await pool.query('SELECT id FROM shop_vendors WHERE user_id=$1', [req.user.id]);
+    if (!vendor[0]) return res.status(403).json({ error: 'Vendor only' });
+    const { rows } = await pool.query(
+      `UPDATE shop_products SET deal_price=$1, deal_ends_at=$2
+       WHERE slug=$3 AND vendor_id=$4 RETURNING *`,
+      [deal_price || null, deal_ends_at || null, slug, vendor[0].id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Product not found or not yours' });
+    res.json({ product: rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ── Reviews ──
+const addReview = async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const { rating, comment } = req.body;
+    if (!rating || rating < 1 || rating > 5) return res.status(400).json({ error: 'Rating 1–5 required' });
+    const { rows } = await pool.query(
+      `INSERT INTO shop_reviews (product_id, user_id, rating, comment) VALUES ($1,$2,$3,$4)
+       ON CONFLICT (product_id, user_id) DO UPDATE SET rating=$3, comment=$4 RETURNING *`,
+      [productId, req.user.id, rating, comment || null]
+    );
+    // Update aggregate
+    await pool.query(
+      `UPDATE shop_products SET rating=(SELECT AVG(rating)::DECIMAL(2,1) FROM shop_reviews WHERE product_id=$1),
+       review_count=(SELECT COUNT(*) FROM shop_reviews WHERE product_id=$1) WHERE id=$1`,
+      [productId]
+    );
+    res.status(201).json({ review: rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 module.exports = {
   getProducts, getProduct, getCategories, becomeVendor, createProduct,
   getCart, addToCart, removeFromCart, checkout, getOrders, stripeWebhook,
+  getWishlist, addToWishlist, removeFromWishlist, getFlashDeals, setFlashDeal, addReview,
 };

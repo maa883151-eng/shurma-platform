@@ -1,15 +1,15 @@
 import { NavLink } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
-import { Home, MessageCircle, Radio, ShoppingBag, User } from 'lucide-react';
+import { Home, MessageCircle, Tv2, ShoppingBag, User } from 'lucide-react';
 
 export default function BottomNav() {
   const { user } = useAuthStore();
 
   const items = [
-    { to: '/feed', icon: Home, label: 'Feed' },
-    { to: '/chats', icon: MessageCircle, label: 'Chats' },
-    { to: '/streams', icon: Radio, label: 'Live' },
-    { to: '/shop', icon: ShoppingBag, label: 'Shop' },
+    { to: '/feed',    icon: Home,          label: 'Feed'     },
+    { to: '/chats',   icon: MessageCircle, label: 'Chats'    },
+    { to: '/channels',icon: Tv2,           label: 'Channels' },
+    { to: '/shop',    icon: ShoppingBag,   label: 'Shop'     },
     { to: `/profile/${user?.id}`, icon: User, label: 'Profile' },
   ];
 

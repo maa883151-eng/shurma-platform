@@ -43,6 +43,10 @@ function setupSockets(io) {
       });
     });
 
+    // ── Channel rooms ──
+    socket.on('join_channel', (channelId) => socket.join(`channel:${channelId}`));
+    socket.on('leave_channel', (channelId) => socket.leave(`channel:${channelId}`));
+
     // ── Stream rooms ──
     socket.on('join_stream', async (streamId) => {
       socket.join(`stream:${streamId}`);
