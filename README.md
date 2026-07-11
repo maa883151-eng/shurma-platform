@@ -7,7 +7,7 @@
 
 **Live demo:** [shurma-platform.vercel.app](https://shurma-platform.vercel.app) · **API:** [shurma-api.onrender.com](https://shurma-api.onrender.com/health)
 
-<!-- Add a hero screenshot or short GIF here: docs/screenshot.png -->
+![Shurma](docs/screenshot.png)
 
 ---
 
