@@ -4,7 +4,11 @@ const getChats = async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT c.*, cp.is_admin,
-              (SELECT COUNT(*) FROM messages m WHERE m.chat_id=c.id) AS message_count
+              (SELECT COUNT(*) FROM messages m WHERE m.chat_id=c.id) AS message_count,
+              (SELECT COUNT(*) FROM messages m
+                WHERE m.chat_id=c.id AND m.sender_id <> $1
+                  AND NOT EXISTS (SELECT 1 FROM message_reads mr WHERE mr.message_id=m.id AND mr.user_id=$1)
+              ) AS unread_count
        FROM chats c
        JOIN chat_participants cp ON cp.chat_id=c.id AND cp.user_id=$1
        ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC`,
@@ -96,4 +100,34 @@ const getChat = async (req, res) => {
   }
 };
 
-module.exports = { getChats, createChat, getChat };
+// Mark every message in a chat (not sent by me) as read; WhatsApp-style
+// receipts are derived from message_reads rather than a per-chat cursor so
+// group chats can later show per-member read state.
+const markChatRead = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rows: access } = await pool.query(
+      'SELECT 1 FROM chat_participants WHERE chat_id=$1 AND user_id=$2',
+      [id, req.user.id]
+    );
+    if (!access.length) return res.status(403).json({ error: 'Access denied' });
+
+    const { rowCount } = await pool.query(
+      `INSERT INTO message_reads (message_id, user_id)
+       SELECT m.id, $2 FROM messages m
+       WHERE m.chat_id=$1 AND m.sender_id <> $2
+       ON CONFLICT (message_id, user_id) DO NOTHING`,
+      [id, req.user.id]
+    );
+
+    if (rowCount > 0) {
+      const io = req.app.get('io');
+      if (io) io.to(`chat:${id}`).emit('messages_read', { chatId: id, userId: req.user.id });
+    }
+    res.json({ read: rowCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+module.exports = { getChats, createChat, getChat, markChatRead };

@@ -9,7 +9,10 @@ const MSG_FIELDS = (userIdParam) => `
   (SELECT row_to_json(rpl) FROM (
     SELECT rm.id, rm.content, rm.message_type, rm.file_url, ru.name AS sender_name
     FROM messages rm JOIN users ru ON ru.id=rm.sender_id WHERE rm.id=m.reply_to
-  ) rpl) AS reply_message
+  ) rpl) AS reply_message,
+  EXISTS(
+    SELECT 1 FROM message_reads mr WHERE mr.message_id=m.id AND mr.user_id <> m.sender_id
+  ) AS is_read
 `;
 
 const getMessages = async (req, res) => {
@@ -87,6 +90,7 @@ const sendMessage = async (req, res) => {
       avatar: req.user.avatar,
       reactions: {},
       my_reaction: null,
+      is_read: false,
     };
 
     const io = req.app.get('io');
