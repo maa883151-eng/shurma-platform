@@ -9,6 +9,7 @@ import {
   ChevronLeft, Phone, Video, CheckCheck, Check, Circle,
 } from 'lucide-react';
 import api from '../api/axios';
+import { uploadFile } from '../api/upload';
 
 const MSG_REACTIONS = ['❤️', '😂', '😮', '😢', '👍', '🔥'];
 
@@ -143,8 +144,10 @@ function MessageBubble({ msg, mine, onReact, onReply, onForward, onDelete }) {
           <div className="flex items-center gap-1 mt-0.5 justify-end">
             <span className={`text-[10px] ${mine ? 'text-primary-200' : 'text-gray-500'}`}>{formatTime(msg.created_at)}</span>
             {mine && (
-              <span className="text-[10px] text-primary-200">
-                <CheckCheck size={12} />
+              <span title={msg.is_read ? 'Read' : 'Sent'}>
+                {msg.is_read
+                  ? <CheckCheck size={13} className="text-sky-300" />
+                  : <Check size={13} className="text-primary-200" />}
               </span>
             )}
           </div>
@@ -236,7 +239,10 @@ export default function ChatPage() {
   const { chatId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  const { chats, activeChat, messages, loading, fetchChats, setActiveChat, fetchMessages, addMessage, createChat } = useChatStore();
+  const {
+    chats, activeChat, messages, loading, fetchChats, setActiveChat, fetchMessages,
+    addMessage, patchMessage, markMessagesRead, markChatRead, createChat,
+  } = useChatStore();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [newChatSearch, setNewChatSearch] = useState('');
@@ -250,30 +256,40 @@ export default function ChatPage() {
   const [showImageInput, setShowImageInput] = useState(false);
   const [recording, setRecording] = useState(false);
   const [mediaRecorder, setMediaRecorder] = useState(null);
+  const [uploading, setUploading] = useState(false);
   const bottomRef = useRef(null);
   const typingTimer = useRef(null);
   const audioChunks = useRef([]);
+  const fileInputRef = useRef(null);
 
   useEffect(() => { fetchChats(); }, []);
 
   useEffect(() => {
     if (chatId) {
       const chat = chats.find((c) => c.id === chatId);
-      if (chat) { setActiveChat(chat); fetchMessages(chatId); }
+      if (chat) { setActiveChat(chat); fetchMessages(chatId); markChatRead(chatId); }
       const socket = getSocket();
       if (socket) {
         socket.emit('join_chat', chatId);
-        socket.on('new_message', (msg) => { if (msg.chat_id === chatId) addMessage(chatId, msg); });
+        socket.on('new_message', (msg) => {
+          if (msg.chat_id !== chatId) return;
+          addMessage(chatId, msg);
+          // I'm looking at this chat, so anything arriving is immediately read
+          if (msg.sender_id !== user?.id) markChatRead(chatId);
+        });
         socket.on('user_typing', ({ userId: uid, name, isTyping }) => {
           if (uid === user?.id) return;
           setTypingUsers((prev) => isTyping ? [...prev.filter((n) => n !== name), name] : prev.filter((n) => n !== name));
         });
-        socket.on('message_reaction', ({ messageId, reactions, my_reaction }) => {
-          // Update message reactions in store
-          addMessage(chatId, null, { id: messageId, reactions });
+        socket.on('message_reaction', ({ messageId, reactions }) => {
+          patchMessage(chatId, messageId, { reactions });
         });
         socket.on('message_deleted', ({ messageId }) => {
-          addMessage(chatId, null, { id: messageId, deleted: true });
+          patchMessage(chatId, messageId, { deleted: true });
+        });
+        socket.on('messages_read', ({ chatId: cid, userId: uid }) => {
+          // someone else read this chat → my sent ticks turn blue
+          if (cid === chatId && uid !== user?.id) markMessagesRead(chatId);
         });
         return () => {
           socket.emit('leave_chat', chatId);
@@ -281,6 +297,7 @@ export default function ChatPage() {
           socket.off('user_typing');
           socket.off('message_reaction');
           socket.off('message_deleted');
+          socket.off('messages_read');
         };
       }
     }
@@ -305,6 +322,32 @@ export default function ChatPage() {
       setText('');
       setReplyTo(null);
     } catch {} finally { setSending(false); }
+  };
+
+  // Real image attachment: pick a file → upload to storage → send as image message.
+  // Falls back to the image-URL input when the server has no storage configured.
+  const handleFilePick = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !chatId) return;
+    setUploading(true);
+    try {
+      const url = await uploadFile(file, 'chat');
+      await api.post(`/messages/${chatId}`, {
+        content: text.trim() || null,
+        message_type: 'image',
+        file_url: url,
+        file_name: file.name,
+        reply_to: replyTo?.id,
+      });
+      setText('');
+      setReplyTo(null);
+    } catch (err) {
+      if (err.response?.status === 503) setShowImageInput(true);
+      else alert(err.response?.data?.error || 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
   };
 
   const reactToMessage = async (messageId, reaction) => {
@@ -366,8 +409,13 @@ export default function ChatPage() {
       mr.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
         const blob = new Blob(audioChunks.current, { type: 'audio/webm' });
-        const url = URL.createObjectURL(blob);
-        // Post as voice message with the object URL (in production, upload to storage)
+        let url;
+        try {
+          url = await uploadFile(new File([blob], 'voice.webm', { type: 'audio/webm' }), 'chat');
+        } catch {
+          // storage not configured — local object URL (sender-only preview)
+          url = URL.createObjectURL(blob);
+        }
         await api.post(`/messages/${chatId}`, {
           content: '🎤 Voice message',
           message_type: 'voice',
@@ -460,12 +508,19 @@ export default function ChatPage() {
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-gray-100 truncate">{displayName}</p>
-                    <p className="text-xs text-gray-500 truncate">{chat.last_message || 'No messages yet'}</p>
+                    <p className={`text-sm truncate ${chat.unread_count > 0 ? 'font-semibold text-white' : 'font-medium text-gray-100'}`}>{displayName}</p>
+                    <p className={`text-xs truncate ${chat.unread_count > 0 ? 'text-gray-300' : 'text-gray-500'}`}>{chat.last_message || 'No messages yet'}</p>
                   </div>
-                  {chat.last_message_at && (
-                    <span className="text-xs text-gray-600 ml-auto shrink-0">{timeAgo(chat.last_message_at)}</span>
-                  )}
+                  <div className="ml-auto shrink-0 flex flex-col items-end gap-1">
+                    {chat.last_message_at && (
+                      <span className={`text-xs ${chat.unread_count > 0 ? 'text-green-400' : 'text-gray-600'}`}>{timeAgo(chat.last_message_at)}</span>
+                    )}
+                    {chat.unread_count > 0 && chat.id !== chatId && (
+                      <span className="bg-green-500 text-gray-950 text-[10px] font-bold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center">
+                        {chat.unread_count > 99 ? '99+' : chat.unread_count}
+                      </span>
+                    )}
+                  </div>
                 </button>
               );
             })}
@@ -504,7 +559,11 @@ export default function ChatPage() {
               {typingUsers.length > 0 ? (
                 <p className="text-xs text-primary-400">{typingUsers.join(', ')} typing…</p>
               ) : !activeChat?.is_group && otherUser ? (
-                <p className="text-xs text-gray-500">{otherUser.is_online ? '● Online' : 'Offline'}</p>
+                <p className="text-xs text-gray-500">
+                  {otherUser.is_online
+                    ? <span className="text-green-400">● Online</span>
+                    : otherUser.last_seen ? `last seen ${timeAgo(otherUser.last_seen)}` : 'Offline'}
+                </p>
               ) : activeChat?.is_group ? (
                 <p className="text-xs text-gray-500">{activeChat.participants?.length} members</p>
               ) : null}
@@ -562,10 +621,12 @@ export default function ChatPage() {
           {/* Input */}
           <form onSubmit={sendMessage} className="p-4 border-t border-gray-800 flex gap-2 items-end">
             <div className="flex gap-1 shrink-0">
-              <button type="button" onClick={() => setShowImageInput(!showImageInput)}
-                className={`p-2 rounded-full transition-colors ${showImageInput ? 'text-primary-400 bg-primary-500/10' : 'text-gray-500 hover:text-primary-400 hover:bg-gray-800'}`}
-                title="Send image">
-                <Image size={18} />
+              <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif"
+                className="hidden" onChange={handleFilePick} />
+              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading}
+                className={`p-2 rounded-full transition-colors ${uploading ? 'text-primary-400 bg-primary-500/10' : 'text-gray-500 hover:text-primary-400 hover:bg-gray-800'}`}
+                title="Send photo">
+                {uploading ? <Loader2 size={18} className="animate-spin" /> : <Image size={18} />}
               </button>
               <button type="button"
                 onClick={recording ? stopRecording : startRecording}
