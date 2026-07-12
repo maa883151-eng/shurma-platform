@@ -39,14 +39,23 @@ describe('POST /api/upload', () => {
     expect(res.status).toBe(401);
   });
 
-  it('returns 503 when storage is not configured', async () => {
+  it('stores the file in Postgres when Supabase Storage is not configured', async () => {
     primeAuth();
+    pool.query.mockResolvedValueOnce({ rows: [{ id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' }] }); // media insert
+
     const res = await request(app)
       .post('/api/upload')
       .set('Authorization', token)
       .attach('file', pngBuffer, { filename: 'a.png', contentType: 'image/png' });
-    expect(res.status).toBe(503);
-    expect(res.body.error).toMatch(/not configured/i);
+
+    expect(res.status).toBe(201);
+    expect(res.body.url).toMatch(/\/api\/media\/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee$/);
+
+    const [insertSql, insertParams] = pool.query.mock.calls[1];
+    expect(insertSql).toMatch(/INSERT INTO media_files/);
+    expect(insertParams[0]).toBe(user.id);
+    expect(insertParams[1]).toBe('image/png');
+    expect(Buffer.isBuffer(insertParams[3])).toBe(true);
   });
 
   it('rejects requests without a file', async () => {
@@ -163,6 +172,33 @@ describe('POST /api/upload', () => {
   it('ensureBucket is a no-op when storage is unconfigured', async () => {
     const storage = require('../src/services/storage.service');
     await expect(storage.ensureBucket()).resolves.toBe(false);
+  });
+});
+
+describe('GET /api/media/:id (DB-backed media serving)', () => {
+  const mediaRoutes = require('../src/routes/media.routes');
+  const mediaApp = express();
+  mediaApp.use('/api/media', mediaRoutes);
+
+  it('serves a stored file with its mime type and immutable caching', async () => {
+    pool.query.mockResolvedValueOnce({ rows: [{ mime: 'image/png', content: Buffer.from('png-bytes') }] });
+    const res = await request(mediaApp).get('/api/media/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/image\/png/);
+    expect(res.headers['cache-control']).toMatch(/immutable/);
+    expect(res.body.toString()).toBe('png-bytes');
+  });
+
+  it('returns 404 for unknown ids', async () => {
+    pool.query.mockResolvedValueOnce({ rows: [] });
+    const res = await request(mediaApp).get('/api/media/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 (not 500) for malformed ids', async () => {
+    pool.query.mockRejectedValueOnce(new Error('invalid input syntax for type uuid'));
+    const res = await request(mediaApp).get('/api/media/not-a-uuid');
+    expect(res.status).toBe(404);
   });
 
   it('returns 500 when the storage backend rejects the upload', async () => {

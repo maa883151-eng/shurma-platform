@@ -7,6 +7,7 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 
 const app = express();
+app.set('trust proxy', 1); // Render/Vercel proxies — req.protocol honors x-forwarded-proto
 const server = http.createServer(app);
 
 const io = new Server(server, {
@@ -38,6 +39,7 @@ app.use(express.urlencoded({ extended: true }));
 // ── Routes ──
 app.use('/api/auth', require('./routes/auth.routes'));
 app.use('/api/upload', require('./routes/upload.routes'));
+app.use('/api/media', require('./routes/media.routes'));
 app.use('/api/users', require('./routes/user.routes'));
 app.use('/api/feed', require('./routes/feed.routes'));
 app.use('/api/posts', require('./routes/post.routes'));
@@ -73,6 +75,10 @@ if (storageConfigured()) {
   ensureBucket()
     .then(() => console.log('Storage bucket ready'))
     .catch((err) => console.error('Storage bucket setup failed:', err.message));
+} else {
+  require('./services/media.service').ensureTable()
+    .then(() => console.log('DB media store ready'))
+    .catch((err) => console.error('Media table setup failed:', err.message));
 }
 
 // ── Start ──
