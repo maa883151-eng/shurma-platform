@@ -53,6 +53,7 @@ Shurma unifies five product surfaces into one platform, sharing a single auth sy
 A few choices worth explaining, since they come up often:
 
 - **AI that degrades gracefully.** Feed ranking and moderation call Claude, but the platform never depends on it: if the API key is absent or the call fails, ranking falls back to an engagement-based heuristic and moderation fails open with an audit-log entry. The app works identically with zero external AI configuration.
+- **Zero-config media uploads.** Uploads go to Supabase Storage when its keys are present; otherwise files are stored in Postgres and served from `/api/media/:id` with immutable caching. A fresh deploy has working photo and voice uploads with no storage account, bucket, or keys — object storage is an optimization, not a prerequisite.
 - **Stripe webhooks over client-side confirmation.** Orders are marked paid only by a signature-verified `checkout.session.completed` webhook — the client redirect is never trusted. The webhook route is mounted *before* `express.json()` because Stripe signature verification requires the raw request body.
 - **Zustand over Redux.** Five modules share one store shape; Zustand keeps that at ~1/10th the boilerplate with no providers, which matters when one person maintains 15+ pages.
 - **JWT with per-request user lookup.** Tokens carry only a user ID; the auth middleware re-fetches the user on each request, so bans, role changes, and deletions take effect immediately instead of at token expiry.
@@ -107,7 +108,7 @@ Optional integrations — the app runs without them:
 |----------|---------|
 | `ANTHROPIC_API_KEY` | AI feed ranking + content moderation |
 | `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | Real payments (otherwise checkout runs in demo mode) |
-| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | Photo/voice uploads to Supabase Storage (otherwise media is URL-based) |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | Offload photo/voice uploads to Supabase Storage (otherwise they're stored in Postgres — uploads work either way) |
 
 Full environment reference in [DOCUMENTATION.md](DOCUMENTATION.md).
 

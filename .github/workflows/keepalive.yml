@@ -1,0 +1,18 @@
+name: Keep-alive
+
+# Free-tier Render spins down on idle and free-tier Supabase pauses after
+# ~7 days without database activity. This ping keeps the live demo warm.
+on:
+  schedule:
+    - cron: '17 5,17 * * *' # twice daily
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping API and touch the database
+        run: |
+          curl -sf --retry 3 --retry-delay 20 --max-time 120 https://shurma-api.onrender.com/health
+          curl -sf --retry 3 --retry-delay 20 --max-time 120 https://shurma-api.onrender.com/api/shop/categories > /dev/null
+          echo "Live demo is up."
