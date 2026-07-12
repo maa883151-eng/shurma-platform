@@ -108,6 +108,22 @@ describe('POST /api/upload', () => {
     fetchSpy.mockRestore();
   });
 
+  it('accepts voice-note audio uploads', async () => {
+    configureStorage();
+    primeAuth();
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({ ok: true, text: async () => '{}' });
+
+    const res = await request(app)
+      .post('/api/upload')
+      .set('Authorization', token)
+      .field('folder', 'chat')
+      .attach('file', Buffer.from('webm-audio'), { filename: 'note.webm', contentType: 'audio/webm' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.url).toMatch(/\/uploads\/chat\/user-1\/[0-9a-f-]+\.webm$/);
+    fetchSpy.mockRestore();
+  });
+
   it('falls back to the media folder for unknown folder values', async () => {
     configureStorage();
     primeAuth();

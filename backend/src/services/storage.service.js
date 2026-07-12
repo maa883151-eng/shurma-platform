@@ -12,6 +12,10 @@ const ALLOWED_TYPES = {
   'image/png': 'png',
   'image/webp': 'webp',
   'image/gif': 'gif',
+  // voice notes
+  'audio/webm': 'webm',
+  'audio/ogg': 'ogg',
+  'audio/mpeg': 'mp3',
 };
 const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 

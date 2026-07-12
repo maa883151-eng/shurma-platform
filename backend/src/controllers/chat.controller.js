@@ -17,7 +17,7 @@ const getChats = async (req, res) => {
     // attach participants to each chat
     for (const chat of rows) {
       const { rows: participants } = await pool.query(
-        `SELECT u.id, u.name, u.username, u.avatar, u.is_online, cp.is_admin
+        `SELECT u.id, u.name, u.username, u.avatar, u.is_online, u.last_seen, cp.is_admin
          FROM chat_participants cp JOIN users u ON u.id=cp.user_id
          WHERE cp.chat_id=$1`,
         [chat.id]
@@ -89,7 +89,7 @@ const getChat = async (req, res) => {
     if (!rows[0]) return res.status(404).json({ error: 'Chat not found or access denied' });
 
     const { rows: participants } = await pool.query(
-      `SELECT u.id, u.name, u.username, u.avatar, u.is_online, cp.is_admin
+      `SELECT u.id, u.name, u.username, u.avatar, u.is_online, u.last_seen, cp.is_admin
        FROM chat_participants cp JOIN users u ON u.id=cp.user_id
        WHERE cp.chat_id=$1`,
       [id]
