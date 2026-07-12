@@ -18,7 +18,7 @@ Shurma unifies five product surfaces into one platform, sharing a single auth sy
 | Module | What it is |
 |--------|-----------|
 | **Feed** | Social feed ranked by Claude AI for genuine quality — no engagement-bait optimization. Posts, stories, polls, reposts, bookmarks, trending. |
-| **Chat** | Real-time 1:1 and group messaging over Socket.io, with typing indicators and read receipts. |
+| **Chat** | WhatsApp-grade real-time messaging: 1:1 and groups, typing indicators, read receipts (✓/✓✓), unread badges, last-seen presence, replies, reactions, forwarding, photo and voice-note uploads. |
 | **Stream** | Live streaming with viewer chat, Stripe-powered tipping, and in-stream product showcases. |
 | **Shop** | Multi-vendor marketplace: carts, wishlists, flash deals, reviews, Stripe Checkout, and webhook-driven order fulfillment. |
 | **Guard** | AI content moderation layer — every piece of content can be screened by Claude, with an audit log and admin rules engine. |
@@ -107,6 +107,7 @@ Optional integrations — the app runs without them:
 |----------|---------|
 | `ANTHROPIC_API_KEY` | AI feed ranking + content moderation |
 | `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | Real payments (otherwise checkout runs in demo mode) |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | Photo/voice uploads to Supabase Storage (otherwise media is URL-based) |
 
 Full environment reference in [DOCUMENTATION.md](DOCUMENTATION.md).
 
@@ -120,6 +121,8 @@ npm test
 The suite covers the highest-risk surfaces:
 
 - **Auth** — registration validation, credential handling, JWT issuance/verification, expired and forged tokens, admin gating. Asserts passwords are bcrypt-hashed and never echoed back.
+- **Uploads** — file type/size validation, per-user storage paths, folder allow-listing, and the unconfigured-storage degradation path.
+- **Chat** — read-receipt marking is idempotent and never marks a user's own messages; unread counts only count messages from others.
 - **Payments** — the Stripe webhook is tested against Stripe's *real* signature verification: tampered and unsigned payloads must be rejected; valid events mark orders paid and clear carts.
 - **AI moderation & ranking** — verdict parsing, audit logging, content truncation, and every degraded mode (no API key, API errors).
 
