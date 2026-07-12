@@ -1,16 +1,36 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import api from '../api/axios';
+import { uploadFile } from '../api/upload';
 import { useAuthStore } from '../store/authStore';
 import PostCard from '../modules/feed/PostCard';
-import { UserCheck, UserPlus, Pencil, X, Loader2, CalendarDays } from 'lucide-react';
+import { UserCheck, UserPlus, Pencil, X, Loader2, CalendarDays, Camera } from 'lucide-react';
 
 function EditProfileModal({ profile, onClose, onSaved }) {
   const [name, setName] = useState(profile.name || '');
   const [bio, setBio] = useState(profile.bio || '');
   const [avatar, setAvatar] = useState(profile.avatar || '');
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
+  const fileRef = useRef(null);
+
+  const pickAvatar = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploading(true);
+    setError('');
+    try {
+      setAvatar(await uploadFile(file, 'avatar'));
+    } catch (err) {
+      setError(err.response?.status === 503
+        ? 'Uploads not configured — paste an image URL below instead'
+        : err.response?.data?.error || 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const save = async (e) => {
     e.preventDefault();
@@ -40,13 +60,20 @@ function EditProfileModal({ profile, onClose, onSaved }) {
         </div>
 
         <div className="flex justify-center">
-          {avatar ? (
-            <img src={avatar} alt="" className="w-20 h-20 rounded-full object-cover ring-2 ring-primary-500" />
-          ) : (
-            <div className="w-20 h-20 rounded-full bg-primary-500 flex items-center justify-center text-3xl font-bold ring-2 ring-primary-400">
-              {name?.[0]?.toUpperCase()}
-            </div>
-          )}
+          <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={pickAvatar} />
+          <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
+            className="relative group rounded-full" title="Upload photo">
+            {avatar ? (
+              <img src={avatar} alt="" className="w-20 h-20 rounded-full object-cover ring-2 ring-primary-500" />
+            ) : (
+              <div className="w-20 h-20 rounded-full bg-primary-500 flex items-center justify-center text-3xl font-bold ring-2 ring-primary-400">
+                {name?.[0]?.toUpperCase()}
+              </div>
+            )}
+            <span className="absolute inset-0 rounded-full bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+              {uploading ? <Loader2 size={20} className="animate-spin text-white" /> : <Camera size={20} className="text-white" />}
+            </span>
+          </button>
         </div>
 
         <div className="space-y-3">

@@ -1,7 +1,8 @@
 import { useState, useRef } from 'react';
 import api from '../../api/axios';
+import { uploadFile } from '../../api/upload';
 import { useAuthStore } from '../../store/authStore';
-import { Image, Loader2, X, Hash, Plus, Video, BarChart3, Trash2 } from 'lucide-react';
+import { Image, Loader2, X, Hash, Plus, Video, BarChart3, Link as LinkIcon } from 'lucide-react';
 
 const MAX_IMAGES = 4;
 const MAX_LEN = 500;
@@ -67,14 +68,37 @@ export default function CreatePost({ onPost }) {
   const [showVideoInput, setShowVideoInput] = useState(false);
   const [poll, setPoll] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const textRef = useRef(null);
+  const fileRef = useRef(null);
 
   const addImage = () => {
     const url = imageInput.trim();
     if (!url || images.length >= MAX_IMAGES) return;
     setImages((imgs) => [...imgs, url]);
     setImageInput('');
+  };
+
+  const pickImages = async (e) => {
+    const files = Array.from(e.target.files || []).slice(0, MAX_IMAGES - images.length);
+    e.target.value = '';
+    if (!files.length) return;
+    setUploading(true);
+    setError('');
+    try {
+      const urls = await Promise.all(files.map((f) => uploadFile(f, 'post')));
+      setImages((imgs) => [...imgs, ...urls].slice(0, MAX_IMAGES));
+    } catch (err) {
+      if (err.response?.status === 503) {
+        setShowImageInput(true);
+        setError('Uploads not configured — paste an image URL instead');
+      } else {
+        setError(err.response?.data?.error || 'Upload failed');
+      }
+    } finally {
+      setUploading(false);
+    }
   };
 
   const addPoll = () => {
@@ -195,10 +219,18 @@ export default function CreatePost({ onPost }) {
 
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1">
+              <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple
+                className="hidden" onChange={pickImages} />
+              <button type="button" onClick={() => fileRef.current?.click()}
+                disabled={uploading || images.length >= MAX_IMAGES}
+                className={`p-2 rounded-lg transition-colors ${uploading ? 'text-primary-400 bg-primary-500/10' : 'text-gray-500 hover:text-primary-400 hover:bg-gray-800'} disabled:opacity-40`}
+                title="Upload photos">
+                {uploading ? <Loader2 size={18} className="animate-spin" /> : <Image size={18} />}
+              </button>
               <button type="button" onClick={() => setShowImageInput(!showImageInput)}
                 className={`p-2 rounded-lg transition-colors ${showImageInput ? 'text-primary-400 bg-primary-500/10' : 'text-gray-500 hover:text-primary-400 hover:bg-gray-800'}`}
-                title="Add images">
-                <Image size={18} />
+                title="Add image by URL">
+                <LinkIcon size={18} />
               </button>
               <button type="button" onClick={() => setShowVideoInput(!showVideoInput)}
                 className={`p-2 rounded-lg transition-colors ${(showVideoInput || videoUrl) ? 'text-primary-400 bg-primary-500/10' : 'text-gray-500 hover:text-primary-400 hover:bg-gray-800'}`}
