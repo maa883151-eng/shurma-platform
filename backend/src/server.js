@@ -67,6 +67,14 @@ app.use((err, req, res, next) => {
 const setupSockets = require('./sockets/index');
 setupSockets(io);
 
+// ── Storage bootstrap ──
+const { ensureBucket, isConfigured: storageConfigured } = require('./services/storage.service');
+if (storageConfigured()) {
+  ensureBucket()
+    .then(() => console.log('Storage bucket ready'))
+    .catch((err) => console.error('Storage bucket setup failed:', err.message));
+}
+
 // ── Start ──
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {

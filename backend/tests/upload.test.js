@@ -140,6 +140,31 @@ describe('POST /api/upload', () => {
     fetchSpy.mockRestore();
   });
 
+  it('ensureBucket creates the bucket and treats 409 already-exists as success', async () => {
+    configureStorage();
+    const storage = require('../src/services/storage.service');
+
+    const created = jest.spyOn(global, 'fetch').mockResolvedValue({ ok: true, status: 200, text: async () => '{}' });
+    await expect(storage.ensureBucket()).resolves.toBe(true);
+    const [url, opts] = created.mock.calls[0];
+    expect(url).toBe('https://example.supabase.co/storage/v1/bucket');
+    expect(JSON.parse(opts.body)).toEqual({ id: 'uploads', name: 'uploads', public: true });
+    created.mockRestore();
+
+    const exists = jest.spyOn(global, 'fetch').mockResolvedValue({ ok: false, status: 409, text: async () => 'Duplicate' });
+    await expect(storage.ensureBucket()).resolves.toBe(true);
+    exists.mockRestore();
+
+    const denied = jest.spyOn(global, 'fetch').mockResolvedValue({ ok: false, status: 403, text: async () => 'not allowed' });
+    await expect(storage.ensureBucket()).rejects.toThrow(/Bucket setup failed \(403\)/);
+    denied.mockRestore();
+  });
+
+  it('ensureBucket is a no-op when storage is unconfigured', async () => {
+    const storage = require('../src/services/storage.service');
+    await expect(storage.ensureBucket()).resolves.toBe(false);
+  });
+
   it('returns 500 when the storage backend rejects the upload', async () => {
     configureStorage();
     primeAuth();
