@@ -6,7 +6,7 @@ import { Zap, Eye, EyeOff } from 'lucide-react';
 export default function LoginPage() {
   const [form, setForm] = useState({ email: '', password: '' });
   const [showPw, setShowPw] = useState(false);
-  const { login, loading, error, clearError } = useAuthStore();
+  const { login, demoLogin, loading, error, clearError } = useAuthStore();
   const navigate = useNavigate();
 
   const submit = async (e) => {
@@ -39,6 +39,20 @@ export default function LoginPage() {
               {error}
             </div>
           )}
+
+          <button
+            type="button"
+            onClick={async () => { clearError(); try { await demoLogin(); navigate('/feed'); } catch {} }}
+            disabled={loading}
+            className="w-full mb-4 bg-primary-500/10 hover:bg-primary-500/20 border border-primary-500/30 text-primary-400 py-2.5 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+          >
+            <Zap size={15} /> Try Demo — one click, no signup
+          </button>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="flex-1 h-px bg-gray-700" />
+            <span className="text-xs text-gray-500">or sign in</span>
+            <div className="flex-1 h-px bg-gray-700" />
+          </div>
 
           <form onSubmit={submit} className="space-y-4">
             <div>

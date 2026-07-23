@@ -33,6 +33,22 @@ export const useAuthStore = create((set, get) => ({
     }
   },
 
+  demoLogin: async () => {
+    set({ loading: true, error: null });
+    try {
+      const { data } = await api.post('/auth/demo');
+      localStorage.setItem('shurma_token', data.token);
+      localStorage.setItem('shurma_user', JSON.stringify(data.user));
+      connectSocket(data.token);
+      set({ user: data.user, token: data.token, loading: false });
+      return data;
+    } catch (err) {
+      const msg = err.response?.data?.error || 'Demo login failed';
+      set({ error: msg, loading: false });
+      throw new Error(msg);
+    }
+  },
+
   register: async (name, username, email, password) => {
     set({ loading: true, error: null });
     try {

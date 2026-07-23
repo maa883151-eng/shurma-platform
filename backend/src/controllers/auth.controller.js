@@ -57,4 +57,34 @@ const me = async (req, res) => {
   res.json({ user: req.user });
 };
 
-module.exports = { register, login, me };
+const demoLogin = async (req, res) => {
+  try {
+    const DEMO_EMAIL = 'demo@shurma.app';
+    const DEMO_PASS = 'demo1234';
+    const DEMO_NAME = 'Ahmed Al-Madani';
+    const DEMO_USERNAME = 'ahmed_demo';
+
+    let { rows } = await pool.query('SELECT * FROM users WHERE email=$1', [DEMO_EMAIL]);
+
+    if (!rows[0]) {
+      const hashed = await bcrypt.hash(DEMO_PASS, 12);
+      const insert = await pool.query(
+        `INSERT INTO users (name, username, email, password, bio, is_verified)
+         VALUES ($1,$2,$3,$4,$5,true)
+         ON CONFLICT (email) DO UPDATE SET name=EXCLUDED.name
+         RETURNING *`,
+        [DEMO_NAME, DEMO_USERNAME, DEMO_EMAIL, hashed, 'Demo account — explore all features of Shurma.']
+      );
+      rows = insert.rows;
+    }
+
+    const { password: _, ...user } = rows[0];
+    const token = signToken(user.id);
+    res.json({ user, token });
+  } catch (err) {
+    console.error('demoLogin:', err.message);
+    res.status(500).json({ error: 'Demo login failed' });
+  }
+};
+
+module.exports = { register, login, me, demoLogin };
