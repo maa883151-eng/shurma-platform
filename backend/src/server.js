@@ -5,6 +5,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const { authLimiter, apiLimiter } = require('./middleware/rateLimit');
 
 const app = express();
 app.set('trust proxy', 1); // Render/Vercel proxies — req.protocol honors x-forwarded-proto
@@ -29,6 +30,9 @@ app.use(cors({
 }));
 app.use(morgan('dev'));
 
+// General rate limiter for the whole /api surface
+app.use('/api', apiLimiter);
+
 // Stripe webhook needs raw body — mount BEFORE express.json()
 const shopRoutes = require('./routes/shop.routes');
 app.use('/api/shop', shopRoutes);
@@ -37,7 +41,8 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // ── Routes ──
-app.use('/api/auth', require('./routes/auth.routes'));
+// Stricter limiter on top of the general one for auth endpoints (login/register/etc.)
+app.use('/api/auth', authLimiter, require('./routes/auth.routes'));
 app.use('/api/upload', require('./routes/upload.routes'));
 app.use('/api/media', require('./routes/media.routes'));
 app.use('/api/users', require('./routes/user.routes'));
